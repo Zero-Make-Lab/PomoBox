@@ -65,10 +65,8 @@ static void drawLauncherScreen() {
     // Card background
     tft.fillRoundRect(15, CARD_Y[s], 290, 48, 8, bg);
 
-    // Selection indicator (left accent bar)
-    if (sel) {
-      tft.fillRoundRect(15, CARD_Y[s], 4, 48, 2, colors[i]);
-    }
+    // Keep each app's color bar visible; the card and text show selection.
+    tft.fillRoundRect(15, CARD_Y[s], 4, 48, 2, colors[i]);
 
     // Icon
     int16_t iconX = 30;
