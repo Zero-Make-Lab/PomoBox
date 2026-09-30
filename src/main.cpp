@@ -154,6 +154,7 @@ static int32_t readEncoderDelta() {
 static bool     btnDown          = false;
 static uint32_t btnDownMs        = 0;
 static bool     longPressHandled = false;
+static bool     pressSoundPlayed = false;
 static constexpr uint32_t DEBOUNCE_MS = 30;  // Minimum press duration to count
 
 // Button events: 0=none, 1=click, 2=long press
@@ -167,10 +168,16 @@ static int readButton() {
     btnDown = true;
     btnDownMs = now;
     longPressHandled = false;
+    pressSoundPlayed = false;
   }
 
   // Only consider presses valid after debounce period
   bool validPress = btnDown && (now - btnDownMs >= DEBOUNCE_MS);
+
+  if (validPress && !pressSoundPlayed) {
+    playKnobSound(KnobSound::PRESS);
+    pressSoundPlayed = true;
+  }
 
   // Long press detection (only after debounce)
   if (validPress && pressed && !longPressHandled && (now - btnDownMs >= LONG_PRESS_MS)) {
@@ -180,6 +187,7 @@ static int readButton() {
 
   // Button released
   if (!pressed && btnDown) {
+    if (validPress) playKnobSound(KnobSound::RELEASE);
     if (!longPressHandled && validPress) event = 1;  // click (only if held > debounce)
     btnDown = false;
   }
@@ -192,6 +200,7 @@ static int readButton() {
 // =============================================================================
 
 static void dispatchEncoder(int32_t delta) {
+  if (delta != 0) playKnobSound(KnobSound::TURN);
   switch (activeApp) {
     case ActiveApp::LAUNCHER:    launcherHandleEncoder(delta); break;
     case ActiveApp::POMODORO:    pomHandleEncoder(delta);      break;
@@ -300,7 +309,9 @@ void setup() {
 
   // Wait for button press to turn on
   while (digitalRead(ENC_SW) == HIGH) { delay(10); }
+  playKnobSound(KnobSound::PRESS);
   while (digitalRead(ENC_SW) == LOW)  { delay(10); }
+  playKnobSound(KnobSound::RELEASE);
 
   turnOn();
 }
@@ -310,7 +321,10 @@ void loop() {
   if (!deviceOn) {
     if (digitalRead(ENC_SW) == LOW) {
       delay(50);
+      if (digitalRead(ENC_SW) != LOW) return;
+      playKnobSound(KnobSound::PRESS);
       while (digitalRead(ENC_SW) == LOW) { delay(10); }
+      playKnobSound(KnobSound::RELEASE);
       turnOn();
     }
     return;

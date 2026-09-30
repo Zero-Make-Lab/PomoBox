@@ -47,6 +47,8 @@ inline void resetDispCache() {
 // Sound System
 // =============================================================================
 
+#include "knob_audio.h"
+
 static constexpr int NOTE_C4 = 262, NOTE_D4 = 294, NOTE_E4 = 330, NOTE_F4 = 349;
 static constexpr int NOTE_G4 = 392, NOTE_A4 = 440, NOTE_B4 = 494;
 static constexpr int NOTE_C5 = 523, NOTE_D5 = 587, NOTE_E5 = 659, NOTE_G5 = 784;

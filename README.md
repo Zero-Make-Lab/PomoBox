@@ -10,7 +10,7 @@ A minimalist Pomodoro-style focus timer built with ESP32 and ILI9341 TFT display
 - **Apple-style Dark UI** - Clean minimalist design with icons
 - **Rotary Encoder Control** - CW for Break, CCW for Focus, Click to pause
 - **Auto-Continue** - Automatically cycles between Focus and Break
-- **Sound Feedback** - Passive buzzer melodies for state changes
+- **Sound Feedback** - Shared demo click samples on turn, press and release, plus melodies for state changes
 - **Volume Control** - Mute, Low, Medium, High
 - **Stats Tracking** - Track total focus time in hours/minutes
 
@@ -64,6 +64,14 @@ pio run --target upload
 ```
 
 ## Controls
+
+The knob clicks use the same generated PCM samples as the browser demo: a
+27 ms turn click and a 45 ms press/release click. The existing passive buzzer
+pin plays these through a 62.5 kHz PWM carrier; no wiring changes are needed.
+Volume and mute apply to the clicks too. `node scripts/generate-knob-audio.mjs`
+rebuilds the sample header from the demo's original noise/filter/decay profile.
+Physical timbre and loudness still depend on the buzzer; these changes have
+been built and simulated but have not been auditioned on a device.
 
 - **Rotate CW** → Switch to Break mode
 - **Rotate CCW** → Switch to Focus mode  
