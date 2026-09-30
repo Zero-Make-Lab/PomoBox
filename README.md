@@ -1,8 +1,8 @@
-# Zero Timer
+# PomoBox
 
 A minimalist Pomodoro-style focus timer built with ESP32 and ILI9341 TFT display.
 
-![Zero Timer](https://img.shields.io/badge/Platform-ESP32-blue) ![License](https://img.shields.io/badge/License-MIT-green)
+![PomoBox](https://img.shields.io/badge/Platform-ESP32-blue) ![License](https://img.shields.io/badge/License-MIT-green)
 
 ## Features
 

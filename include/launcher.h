@@ -26,8 +26,9 @@ static void drawLauncherScreen() {
     // Title
     tft.setTextColor(COLOR_TEXT, COLOR_BG);
     tft.setTextSize(2);
-    tft.setCursor(100, 12);
-    tft.print("Zero Timer");
+    const char* title = "PomoBox";
+    tft.setCursor((tft.width() - strlen(title) * 12) / 2, 12);
+    tft.print(title);
 
     // Accent line under title
     tft.fillRect(80, 36, 160, 2, COLOR_ACCENT_FOCUS);

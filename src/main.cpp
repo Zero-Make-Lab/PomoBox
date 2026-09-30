@@ -1,5 +1,5 @@
 // ESP32-WROOM-32E + KY-040 rotary encoder + 3.2" SPI TFT 240x320 (ILI9341)
-// Zero Timer - Multi-App Timer Platform
+// PomoBox - Multi-App Timer Platform
 // Apps: Pomodoro Timer, Quick Timer, Stopwatch
 // Input: Rotate -> Navigate/Adjust, Click -> Action, Hold -> Menu/Back
 
@@ -62,6 +62,7 @@ void turnOn();
 // =============================================================================
 // Storage (NVS)
 // =============================================================================
+// Keep the persisted namespace so existing devices retain settings and focus stats.
 
 void saveSettings() {
   prefs.begin("zerotimer", false);
@@ -254,7 +255,7 @@ static void dispatchDraw() {
 void setup() {
   Serial.begin(115200);
   delay(200);
-  Serial.println("\nZero Timer - Multi-App Platform");
+  Serial.println("\nPomoBox - Multi-App Platform");
 
   pinMode(ENC_SW, INPUT_PULLUP);
 

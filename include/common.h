@@ -224,12 +224,13 @@ inline void playBootSplash() {
 
   delay(100);
 
-  // "Zero Timer" text, letter by letter
-  const char* title = "Zero Timer";
+  // "PomoBox" text, letter by letter
+  const char* title = "PomoBox";
+  const int16_t titleX = (tft.width() - strlen(title) * 18) / 2;
   tft.setTextSize(3);
   tft.setTextColor(COLOR_TEXT, COLOR_BG);
   for (int i = 0; title[i]; i++) {
-    tft.setCursor(70 + i * 18, 82);
+    tft.setCursor(titleX + i * 18, 82);
     tft.print(title[i]);
     delay(50);
   }
