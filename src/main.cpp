@@ -1,4 +1,6 @@
-// ESP32-WROOM-32E + KY-040 rotary encoder + 3.2" SPI TFT 240x320 (ILI9341)
+// The PomoBox kit: ESP32-C3 SuperMini + PEC12R encoder + 3.2" SPI TFT 240x320 (ILI9341), USB powered
+// (env pomobox_c3_usb, the default). Also the original ESP32-WROOM-32E + KY-040 breadboard build (esp32dev) and
+// earlier prototype boards (Zer0 rev C on the RP2040, the Zer0 DIY board, the FireBeetle 2 ESP32-C6 battery kit).
 // PomoBox - Multi-App Timer Platform
 // Apps: Pomodoro Timer, Quick Timer, Stopwatch
 // Input: Rotate -> Navigate/Adjust, Click -> Action, Hold -> Menu/Back
@@ -11,7 +13,7 @@
 // Global Hardware Objects
 // =============================================================================
 
-Adafruit_ILI9341 tft(&SPI, TFT_DC, TFT_CS, TFT_RST);
+// tft is in src/platform/display.cpp, with the board's display driver
 ESP32Encoder encoder;
 Preferences prefs;
 
@@ -96,9 +98,13 @@ void turnOff() {
   digitalWrite(TFT_LED, LOW);
   deviceOn = false;
   Serial.println("Device OFF");
+  // On battery (rev C, DIY board) the board switches off here. On USB it stays in the soft off until a press or the
+  // unplug.
+  powerRelease();
 }
 
 void turnOn() {
+  powerHold();
   digitalWrite(TFT_LED, HIGH);
   displaySleep(false);
   deviceOn = true;
@@ -123,7 +129,7 @@ void switchToLauncher() {
   }
   if (activeApp == ActiveApp::METRONOME && metroState == MetroState::PLAYING) {
     metroState = MetroState::IDLE;
-    ledcWriteTone(BUZZER_CHANNEL, 0);
+    pomoLedcWriteTone(BUZZER_CHANNEL, 0);
     metroBuzzing = false;
   }
 
@@ -262,6 +268,7 @@ static void dispatchDraw() {
 // =============================================================================
 
 void setup() {
+  powerHold();  // C6: power peripherals before driving their inputs or starting SPI
   Serial.begin(115200);
   delay(200);
   Serial.println("\nPomoBox - Multi-App Platform");
@@ -273,8 +280,8 @@ void setup() {
   digitalWrite(TFT_LED, LOW);
 
   // Buzzer
-  ledcSetup(BUZZER_CHANNEL, 2000, 8);
-  ledcAttachPin(BUZZER_PIN, BUZZER_CHANNEL);
+  pomoLedcSetup(BUZZER_CHANNEL, 2000, 8);
+  pomoLedcAttachPin(BUZZER_PIN, BUZZER_CHANNEL);
 
   // Encoder
   ESP32Encoder::useInternalWeakPullResistors = puType::up;
@@ -287,10 +294,7 @@ void setup() {
   pinMode(TFT_DC, OUTPUT);  digitalWrite(TFT_DC, HIGH);
   pinMode(TFT_RST, OUTPUT); digitalWrite(TFT_RST, HIGH);
 
-  SPI.begin(TFT_SCK, TFT_MISO, TFT_MOSI, TFT_CS);
-  tft.begin(8000000);
-  tft.setRotation(3);
-  tft.invertDisplay(false);
+  displayBegin();
 
   // Load saved settings
   loadSettings();
@@ -305,6 +309,18 @@ void setup() {
   displaySleep(true);
   deviceOn = false;
 
+  if (powerStartedByButton()) {
+    // Rev C, DIY board: the press that switched the board on is the press that turns the timer on
+    playKnobSound(KnobSound::PRESS);
+    while (digitalRead(ENC_SW) == LOW) { delay(10); }
+    playKnobSound(KnobSound::RELEASE);
+    turnOn();
+    return;
+  }
+
+  // Powered by USB (or the bare ESP32 devkit): soft off. On rev C and the DIY board, unplugging USB now switches the
+  // board off.
+  powerRelease();
   Serial.println("Press button to start...");
 
   // Wait for button press to turn on
@@ -314,6 +330,19 @@ void setup() {
   playKnobSound(KnobSound::RELEASE);
 
   turnOn();
+}
+
+// On battery (rev C, DIY board): the cell is nearly empty. Say so, then save and switch off while the 3.3 V supply
+// still holds.
+static void lowBatteryOff() {
+  Serial.println("Battery low");
+  tft.fillScreen(COLOR_BG);
+  tft.setTextColor(COLOR_RED, COLOR_BG);
+  tft.setTextSize(2);
+  tft.setCursor((tft.width() - 11 * 12) / 2, 112);
+  tft.print("Battery low");
+  delay(1500);
+  turnOff();
 }
 
 void loop() {
@@ -327,6 +356,11 @@ void loop() {
       playKnobSound(KnobSound::RELEASE);
       turnOn();
     }
+    return;
+  }
+
+  if (powerBatteryCritical()) {
+    lowBatteryOff();
     return;
   }
 

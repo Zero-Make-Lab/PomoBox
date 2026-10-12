@@ -20,18 +20,18 @@ inline void playKnobSound(KnobSound kind) {
 #else
   // Use the existing buzzer pin/channel as a PWM DAC. No wiring changes.
   // Playback is bounded to 27/45ms, like the existing blocking feedback tones.
-  const uint32_t previousFrequency = ledcReadFreq(BUZZER_CHANNEL);
-  const uint32_t previousDuty = ledcRead(BUZZER_CHANNEL);
-  if (ledcSetup(BUZZER_CHANNEL, 62500, 8) > 0) {
+  const uint32_t previousFrequency = pomoLedcReadFreq(BUZZER_CHANNEL);
+  const uint32_t previousDuty = pomoLedcRead(BUZZER_CHANNEL);
+  if (pomoLedcSetup(BUZZER_CHANNEL, 62500, 8) > 0) {
     const uint32_t started = micros();
     for (uint32_t i = 0; i < count; i++) {
       const int sample = (int8_t)pgm_read_byte(pcm + i);
-      ledcWrite(BUZZER_CHANNEL, 128 + sample * level / 255);
+      pomoLedcWrite(BUZZER_CHANNEL, 128 + sample * level / 255);
       const uint32_t deadline = (i + 1) * 1000000UL / KNOB_SAMPLE_RATE;
       while ((uint32_t)(micros() - started) < deadline) {}
     }
   }
-  ledcWriteTone(BUZZER_CHANNEL, previousFrequency);
-  if (previousFrequency) ledcWrite(BUZZER_CHANNEL, previousDuty);
+  pomoLedcWriteTone(BUZZER_CHANNEL, previousFrequency);
+  if (previousFrequency) pomoLedcWrite(BUZZER_CHANNEL, previousDuty);
 #endif
 }
