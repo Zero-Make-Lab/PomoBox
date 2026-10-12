@@ -36,7 +36,7 @@ static void metroTick() {
 
   // Stop buzzer after tick duration
   if (metroBuzzing && now - metroBuzzStart >= METRO_TICK_MS) {
-    ledcWriteTone(BUZZER_CHANNEL, 0);
+    pomoLedcWriteTone(BUZZER_CHANNEL, 0);
     metroBuzzing = false;
   }
 
@@ -62,8 +62,8 @@ static void metroTick() {
         case VolumeLevel::VOL_HIGH: duty = 230; break;
         default: break;
       }
-      ledcWriteTone(BUZZER_CHANNEL, freq);
-      ledcWrite(BUZZER_CHANNEL, duty);
+      pomoLedcWriteTone(BUZZER_CHANNEL, freq);
+      pomoLedcWrite(BUZZER_CHANNEL, duty);
       metroBuzzing = true;
       metroBuzzStart = now;
     }
@@ -257,7 +257,7 @@ static void drawMetroMenuScreen() {
 static void metroEnterMenu() {
   // Stop playing when entering menu
   if (metroState == MetroState::PLAYING) {
-    ledcWriteTone(BUZZER_CHANNEL, 0);
+    pomoLedcWriteTone(BUZZER_CHANNEL, 0);
     metroBuzzing = false;
   }
   metroState = MetroState::MENU;
@@ -279,14 +279,14 @@ static void metroMenuClick() {
       break;
     case 1: // Switch App
       if (metroState == MetroState::PLAYING) {
-        ledcWriteTone(BUZZER_CHANNEL, 0);
+        pomoLedcWriteTone(BUZZER_CHANNEL, 0);
         metroBuzzing = false;
       }
       switchToLauncher();
       break;
     case 2: // Turn Off
       if (metroState == MetroState::PLAYING) {
-        ledcWriteTone(BUZZER_CHANNEL, 0);
+        pomoLedcWriteTone(BUZZER_CHANNEL, 0);
         metroBuzzing = false;
       }
       turnOff();
@@ -315,7 +315,7 @@ static void metroHandleClick() {
   if (metroState == MetroState::PLAYING) {
     // Stop
     metroState = MetroState::IDLE;
-    ledcWriteTone(BUZZER_CHANNEL, 0);
+    pomoLedcWriteTone(BUZZER_CHANNEL, 0);
     metroBuzzing = false;
     metroBeatFlash = false;
     playClickSound();

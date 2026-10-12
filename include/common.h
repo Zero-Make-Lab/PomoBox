@@ -5,7 +5,7 @@
 // Global Hardware Objects (defined in main.cpp)
 // =============================================================================
 
-extern Adafruit_ILI9341 tft;
+extern Display tft;  // the board's display driver (platform/display.h)
 extern ESP32Encoder encoder;
 extern Preferences prefs;
 
@@ -63,13 +63,13 @@ inline void playTone(int freq, int durMs) {
       case VolumeLevel::VOL_HIGH: duty = 230; break;
       default: break;
     }
-    ledcWriteTone(BUZZER_CHANNEL, freq);
-    ledcWrite(BUZZER_CHANNEL, duty);
+    pomoLedcWriteTone(BUZZER_CHANNEL, freq);
+    pomoLedcWrite(BUZZER_CHANNEL, duty);
     delay(durMs);
   } else {
     delay(durMs);
   }
-  ledcWriteTone(BUZZER_CHANNEL, 0);
+  pomoLedcWriteTone(BUZZER_CHANNEL, 0);
 }
 
 inline void playClickSound()   { playTone(NOTE_E5, 50); }
