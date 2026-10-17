@@ -311,6 +311,8 @@ void mirrorResumeMark(bool asked) {
 
 static void mirrorStart() {
   mirrorResumeMark(false);  // the page is here: a later restart is not the hand-off
+  Serial.print(MIRROR_VERSION_LINE);
+  Serial.println(POMOBOX_VERSION);
   uint8_t f[MIRROR_FRAME_MAX];
   Serial.write(f, mirrorFrameInfo(f, tft.width(), tft.height()));
   Serial.write(f, mirrorFramePower(f, deviceOn));

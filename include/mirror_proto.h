@@ -127,6 +127,8 @@ inline bool mirrorExpired(const MirrorSession &s, uint32_t now) {
 // page, which connects by itself. Printable ASCII, so the page never reads it as a frame.
 
 static constexpr const char *MIRROR_OPEN_REQUEST = "@pomobox open-mirror";
+// Printed in reply to hello, before the frames: zeroFlash reads which version a PomoBox runs from it
+static constexpr const char *MIRROR_VERSION_LINE = "@pomobox version ";
 static constexpr uint32_t    MIRROR_OPEN_WAIT_MS = 15000;  // asked this long ago with no page: say nobody answered
 
 enum class MirrorLink { IDLE, OPENING, NO_ANSWER, CONNECTED };

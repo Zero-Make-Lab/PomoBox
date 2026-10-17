@@ -3,7 +3,7 @@
 
 // The firmware version, shown in the general Settings (hold the knob on the app list) and printed at boot.
 // Bump it for every build that leaves this repo (zeroFlash, a USB update).
-#define POMOBOX_VERSION "1.1.3"
+#define POMOBOX_VERSION "1.1.4"
 
 // "major.minor.patch" as one number (1.1.0 -> 10100). Saved in the settings, so the first start of a new version
 // notices it: it switches on and says so.

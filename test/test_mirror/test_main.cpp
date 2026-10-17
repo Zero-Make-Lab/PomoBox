@@ -151,6 +151,11 @@ void test_open_request_is_one_plain_log_line() {
   }
 }
 
+void test_version_line_is_plain_text_zeroflash_can_read() {
+  TEST_ASSERT_EQUAL_STRING("@pomobox version ", MIRROR_VERSION_LINE);
+  for (const char *c = MIRROR_VERSION_LINE; *c; c++) TEST_ASSERT_TRUE(*c >= 0x20 && *c < 0x7F);
+}
+
 void test_link_state_on_the_pc_mirror_screen() {
   TEST_ASSERT_TRUE(mirrorLinkState(false, false, 0, 5000) == MirrorLink::IDLE);
   TEST_ASSERT_TRUE(mirrorLinkState(false, true, 1000, 1000 + MIRROR_OPEN_WAIT_MS - 1) == MirrorLink::OPENING);
@@ -173,5 +178,6 @@ int main() {
   RUN_TEST(test_input_lines_do_not_start_a_session);
   RUN_TEST(test_open_request_is_one_plain_log_line);
   RUN_TEST(test_link_state_on_the_pc_mirror_screen);
+  RUN_TEST(test_version_line_is_plain_text_zeroflash_can_read);
   return UNITY_END();
 }
