@@ -107,8 +107,8 @@ void test_junk_and_out_of_range_lines_do_nothing() {
 void test_an_overlong_line_is_dropped_whole() {
   MirrorLine l{};
   int32_t t = 0;
-  // 40 characters ending in "click": must not be read as a click
-  TEST_ASSERT_TRUE(feed(l, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxclick\n", t) == MirrorCmd::NONE);
+  // 70 characters ending in "click": must not be read as a click
+  TEST_ASSERT_TRUE(feed(l, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxclick\n", t) == MirrorCmd::NONE);
   TEST_ASSERT_TRUE(feed(l, "click\n", t) == MirrorCmd::CLICK);  // and the next line is read normally
 }
 

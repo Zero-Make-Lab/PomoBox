@@ -60,12 +60,12 @@ inline size_t mirrorFramePower(uint8_t *out, bool screenOn) {
 
 // --- PC to PomoBox: newline-terminated text lines ---
 
-enum class MirrorCmd { NONE, HELLO, PING, TURN, CLICK, HOLD, BYE };
+enum class MirrorCmd { NONE, HELLO, PING, TURN, CLICK, HOLD, BYE, UPDATE };
 
 struct MirrorLine {
-  char    buf[32];
+  char    buf[64];   // a completed line stays here until the next byte (serial_update.h reads "update ..." from it)
   uint8_t len;
-  bool    overflow;  // the line went past 31 characters: drop all of it
+  bool    overflow;  // the line went past 63 characters: drop all of it
 };
 
 // One complete line (without its newline). turn is set for TURN only.
@@ -75,6 +75,7 @@ inline MirrorCmd mirrorParse(const char *s, int32_t &turn) {
   if (!strcmp(s, "click")) return MirrorCmd::CLICK;
   if (!strcmp(s, "hold"))  return MirrorCmd::HOLD;
   if (!strcmp(s, "bye"))   return MirrorCmd::BYE;
+  if (!strncmp(s, "update ", 7)) return MirrorCmd::UPDATE;  // its size and MD5: parseUpdateCommand
   if (!strncmp(s, "turn ", 5) && s[5]) {
     char *end;
     long v = strtol(s + 5, &end, 10);
