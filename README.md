@@ -29,8 +29,8 @@ The solder-it-yourself kit: every part the builder solders is through-hole.
 | Part | |
 |------|---|
 | Controller | ESP32-C3 SuperMini (ESP32-C3 FN4, 4 MB flash) on two 8-pin headers. Its USB-C is the only power input and the flashing port |
-| Display | MSP3217: 3.2" 240x320 ILI9341, 4-wire SPI, on a 14-pin socket, run from 5 V |
-| Knob | Bourns PEC12R-2225F-S0024 side-shaft encoder with push switch, 10k pull-ups and 10 nF filters |
+| Display | MSP3217: 3.2" 240x320 ILI9341, 4-wire SPI, on a 14-pin socket, run from 3.3 V (bridge the display's own J1) |
+| Knob | Bourns PEC12R-2230F-S0024 side-shaft encoder (30 mm shaft) with push switch, 10k pull-ups and 10 nF filters |
 | Sound | 12 mm passive buzzer through an SS8050 transistor |
 | Power | The USB-C cable. No battery |
 
