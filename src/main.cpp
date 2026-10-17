@@ -431,15 +431,17 @@ static void updateBegin(const char *line) {
 // While an update runs, the loop does only this
 static void updatePump() {
 #if defined(ARDUINO_ARCH_ESP32)
-  static uint8_t buf[1024];
+  // Gather a whole block in RAM, then write it to flash: never write flash while bytes are still arriving
+  static uint8_t block[UPDATE_BLOCK];
   uint32_t n;
-  while ((n = updateTake(upd.size, upd.received, (uint32_t)Serial.available(), sizeof buf)) > 0) {
-    n = (uint32_t)Serial.readBytes(buf, n);
-    if (esp_ota_write(upd.handle, buf, n) != ESP_OK) { updateFail("write"); return; }
-    upd.sum.add(buf, n);
+  while ((n = updateTake(upd.size, upd.received, (uint32_t)Serial.available(), updateBlockRoom(upd.received))) > 0) {
+    n = (uint32_t)Serial.readBytes(block + upd.received % UPDATE_BLOCK, n);
     upd.received += n;
     upd.lastMs = millis();
-    if (updateShouldAck(upd.received, upd.size)) {
+    if (updateBlockReady(upd.received, upd.size)) {
+      uint32_t len = (upd.received - 1) % UPDATE_BLOCK + 1;
+      if (esp_ota_write(upd.handle, block, len) != ESP_OK) { updateFail("write"); return; }
+      upd.sum.add(block, len);
       char msg[40];
       snprintf(msg, sizeof msg, "ack %lu", (unsigned long)upd.received);
       updateSay(msg);

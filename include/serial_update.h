@@ -11,7 +11,7 @@
 //
 // PC: "update <size> <md5>"      PomoBox: "@pomobox update ready"
 // PC: the image, in blocks of UPDATE_BLOCK bytes, each after the previous one's ack
-// PomoBox: "@pomobox update ack <received>" per block, then "@pomobox update done" (and restarts)
+// PomoBox: "@pomobox update ack <received>" per block, once it is written to flash, then "@pomobox update done" (and restarts)
 //          or "@pomobox update error <reason>" at any point
 // =============================================================================
 
@@ -52,8 +52,14 @@ inline uint32_t updateTake(uint32_t size, uint32_t received, uint32_t available,
   return n < left ? n : left;
 }
 
-// An ack after every whole block, and after the last bytes
-inline bool updateShouldAck(uint32_t received, uint32_t size) {
+// Room left in the block being gathered. Writing flash pauses the serial interrupt, and at 921600 baud the UART's
+// 128-byte FIFO overflows in about 1.4 ms, so the image is written only between blocks, while the PC waits for the ack.
+inline uint32_t updateBlockRoom(uint32_t received) {
+  return UPDATE_BLOCK - received % UPDATE_BLOCK;
+}
+
+// A whole block (or the last, short one) has arrived: write it, then ack
+inline bool updateBlockReady(uint32_t received, uint32_t size) {
   return received > 0 && (received % UPDATE_BLOCK == 0 || received == size);
 }
 

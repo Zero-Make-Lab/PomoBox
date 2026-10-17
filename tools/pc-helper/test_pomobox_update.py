@@ -37,6 +37,13 @@ class Command(unittest.TestCase):
         limit = int(re.search(r"UPDATE_MAX_SIZE\s*=\s*(0x[0-9A-Fa-f]+|\d+)", header).group(1), 0)
         self.assertEqual(updater.MAX_SIZE, limit)
 
+    def test_paced_pieces_fit_the_uart_fifo_and_cover_the_block(self):
+        block = bytes(range(256)) * 16
+        self.assertEqual(updater.pieces(block, False), [block])
+        paced = updater.pieces(block, True)
+        self.assertTrue(all(len(p) <= 120 for p in paced))
+        self.assertEqual(b"".join(paced), block)
+
     def test_rejects_a_merged_image(self):
         # A merged image starts with the bootloader at 0x1000 (0xFF padding before it); an app image starts with 0xE9
         self.assertIsNotNone(updater.image_problem(b"\xff" * 4096 + b"\xe9"))

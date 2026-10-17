@@ -62,11 +62,11 @@ void test_how_much_to_take_from_the_link() {
 }
 
 void test_acks_every_block_and_at_the_end() {
-  TEST_ASSERT_FALSE(updateShouldAck(4095, 10000));
-  TEST_ASSERT_TRUE(updateShouldAck(4096, 10000));
-  TEST_ASSERT_TRUE(updateShouldAck(8192, 10000));
-  TEST_ASSERT_TRUE(updateShouldAck(10000, 10000));  // the last, short block
-  TEST_ASSERT_FALSE(updateShouldAck(0, 10000));
+  TEST_ASSERT_FALSE(updateBlockReady(4095, 10000));
+  TEST_ASSERT_TRUE(updateBlockReady(4096, 10000));
+  TEST_ASSERT_TRUE(updateBlockReady(8192, 10000));
+  TEST_ASSERT_TRUE(updateBlockReady(10000, 10000));  // the last, short block
+  TEST_ASSERT_FALSE(updateBlockReady(0, 10000));
 }
 
 void test_percent_for_the_progress_bar() {
@@ -74,6 +74,18 @@ void test_percent_for_the_progress_bar() {
   TEST_ASSERT_EQUAL(50, updatePercent(167496, 334992));
   TEST_ASSERT_EQUAL(100, updatePercent(334992, 334992));
   TEST_ASSERT_EQUAL(100, updatePercent(UPDATE_MAX_SIZE, UPDATE_MAX_SIZE));  // no overflow at the largest image
+}
+
+void test_a_block_is_gathered_before_it_is_written() {
+  // Flash writes pause the serial interrupt: the image is written only once a whole block has arrived
+  TEST_ASSERT_EQUAL_UINT32(4096, updateBlockRoom(0));
+  TEST_ASSERT_EQUAL_UINT32(96, updateBlockRoom(4000));
+  TEST_ASSERT_EQUAL_UINT32(4096, updateBlockRoom(8192));
+  TEST_ASSERT_EQUAL_UINT32(96, updateTake(10000, 4000, 500, updateBlockRoom(4000)));  // stops at the block's end
+  TEST_ASSERT_FALSE(updateBlockReady(4000, 10000));
+  TEST_ASSERT_TRUE(updateBlockReady(4096, 10000));
+  TEST_ASSERT_TRUE(updateBlockReady(10000, 10000));  // the last, short block
+  TEST_ASSERT_FALSE(updateBlockReady(0, 10000));
 }
 
 int main() {
@@ -85,5 +97,6 @@ int main() {
   RUN_TEST(test_how_much_to_take_from_the_link);
   RUN_TEST(test_acks_every_block_and_at_the_end);
   RUN_TEST(test_percent_for_the_progress_bar);
+  RUN_TEST(test_a_block_is_gathered_before_it_is_written);
   return UNITY_END();
 }
