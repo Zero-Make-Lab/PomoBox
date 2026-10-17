@@ -1,5 +1,6 @@
 #pragma once
 #include "config.h"
+#include "qt_time.h"
 
 // =============================================================================
 // Global Hardware Objects (defined in main.cpp)
@@ -22,6 +23,7 @@ enum class VolumeLevel : uint8_t { VOL_MUTE, VOL_LOW, VOL_MED, VOL_HIGH };
 
 extern ActiveApp  activeApp;
 extern VolumeLevel volumeLevel;
+extern QTUnits     qtUnits;  // Quick Timer: MM:SS or HH:MM, saved
 extern bool        deviceOn;
 extern bool        needsFullRedraw;
 
@@ -276,13 +278,51 @@ void turnOff();
 void turnOn();
 
 // =============================================================================
-// Shared Simple Menu (used by Quick Timer & Stopwatch)
+// Shared Simple Menu (the Quick Timer's settings)
 // =============================================================================
 
-enum class SimpleMenuItem { VOLUME, SWITCH_APP, TURN_OFF };
-static constexpr int SIMPLE_MENU_COUNT = 3;
+enum class SimpleMenuItem { VOLUME, TIMER_MODE, SWITCH_APP, TURN_OFF };
+static constexpr int SIMPLE_MENU_COUNT = 4;
 
 extern SimpleMenuItem simpleMenuSel;
+
+inline void drawSimpleMenuRow(int i, bool s) {
+  const int IH = 42, SY = 60;
+  int16_t y = SY + i * IH;
+  uint16_t bg = s ? COLOR_SURFACE : COLOR_BG;
+  tft.fillRoundRect(15, y, 290, 38, 8, bg);
+  tft.setTextSize(2);
+
+  switch ((SimpleMenuItem)i) {
+    case SimpleMenuItem::VOLUME:
+      tft.setTextColor(s ? COLOR_TEXT : COLOR_TEXT_DIM, bg);
+      tft.setCursor(25, y + 11); tft.print("Volume");
+      tft.setTextColor(s ? COLOR_ACCENT_FOCUS : COLOR_TEXT_DIM, bg);
+      tft.setCursor(220, y + 11);
+      switch (volumeLevel) {
+        case VolumeLevel::VOL_MUTE: tft.print("Mute"); break;
+        case VolumeLevel::VOL_LOW:  tft.print("Low");  break;
+        case VolumeLevel::VOL_MED:  tft.print("Med");  break;
+        case VolumeLevel::VOL_HIGH: tft.print("High"); break;
+      }
+      break;
+    case SimpleMenuItem::TIMER_MODE:
+      tft.setTextColor(s ? COLOR_TEXT : COLOR_TEXT_DIM, bg);
+      tft.setCursor(25, y + 11); tft.print("Timer Mode");
+      tft.setTextColor(s ? COLOR_ACCENT_FOCUS : COLOR_TEXT_DIM, bg);
+      tft.setCursor(220, y + 11);
+      tft.print(qtUnits == QTUnits::HOUR_MIN ? "Hours" : "Mins");
+      break;
+    case SimpleMenuItem::SWITCH_APP:
+      tft.setTextColor(s ? COLOR_TEXT : COLOR_TEXT_DIM, bg);
+      tft.setCursor(100, y + 11); tft.print("Switch App");
+      break;
+    case SimpleMenuItem::TURN_OFF:
+      tft.setTextColor(COLOR_RED, bg);
+      tft.setCursor(115, y + 11); tft.print("Turn Off");
+      break;
+  }
+}
 
 inline void drawSimpleMenu(const char* title) {
   int sel = (int)simpleMenuSel;
@@ -301,72 +341,14 @@ inline void drawSimpleMenu(const char* title) {
     tft.setCursor(80, 228);
     tft.print("click: change  hold: back");
 
-    const int IH = 50, SY = 60;
-    for (int i = 0; i < SIMPLE_MENU_COUNT; i++) {
-      bool s = (i == sel);
-      int16_t y = SY + i * IH;
-      uint16_t bg = s ? COLOR_SURFACE : COLOR_BG;
-      tft.fillRoundRect(15, y, 290, 44, 8, bg);
-
-      switch (i) {
-        case 0: // Volume
-          tft.setTextColor(s ? COLOR_TEXT : COLOR_TEXT_DIM, bg);
-          tft.setTextSize(2); tft.setCursor(25, y + 14); tft.print("Volume");
-          tft.setTextColor(s ? COLOR_ACCENT_FOCUS : COLOR_TEXT_DIM, bg);
-          tft.setCursor(220, y + 14);
-          switch (volumeLevel) {
-            case VolumeLevel::VOL_MUTE: tft.print("Mute"); break;
-            case VolumeLevel::VOL_LOW:  tft.print("Low");  break;
-            case VolumeLevel::VOL_MED:  tft.print("Med");  break;
-            case VolumeLevel::VOL_HIGH: tft.print("High"); break;
-          }
-          break;
-        case 1: // Switch App
-          tft.setTextColor(s ? COLOR_TEXT : COLOR_TEXT_DIM, bg);
-          tft.setTextSize(2); tft.setCursor(100, y + 14); tft.print("Switch App");
-          break;
-        case 2: // Turn Off
-          tft.setTextColor(COLOR_RED, bg);
-          tft.setTextSize(2); tft.setCursor(115, y + 14); tft.print("Turn Off");
-          break;
-      }
-    }
+    for (int i = 0; i < SIMPLE_MENU_COUNT; i++) drawSimpleMenuRow(i, i == sel);
 
     needsFullRedraw = false;
     dispMenuSel = sel;
   }
   else if (sel != dispMenuSel) {
-    const int IH = 50, SY = 60;
-    for (int i = 0; i < SIMPLE_MENU_COUNT; i++) {
-      if (i != sel && i != dispMenuSel) continue;
-      bool s = (i == sel);
-      int16_t y = SY + i * IH;
-      uint16_t bg = s ? COLOR_SURFACE : COLOR_BG;
-      tft.fillRoundRect(15, y, 290, 44, 8, bg);
-
-      switch (i) {
-        case 0:
-          tft.setTextColor(s ? COLOR_TEXT : COLOR_TEXT_DIM, bg);
-          tft.setTextSize(2); tft.setCursor(25, y + 14); tft.print("Volume");
-          tft.setTextColor(s ? COLOR_ACCENT_FOCUS : COLOR_TEXT_DIM, bg);
-          tft.setCursor(220, y + 14);
-          switch (volumeLevel) {
-            case VolumeLevel::VOL_MUTE: tft.print("Mute"); break;
-            case VolumeLevel::VOL_LOW:  tft.print("Low");  break;
-            case VolumeLevel::VOL_MED:  tft.print("Med");  break;
-            case VolumeLevel::VOL_HIGH: tft.print("High"); break;
-          }
-          break;
-        case 1:
-          tft.setTextColor(s ? COLOR_TEXT : COLOR_TEXT_DIM, bg);
-          tft.setTextSize(2); tft.setCursor(100, y + 14); tft.print("Switch App");
-          break;
-        case 2:
-          tft.setTextColor(COLOR_RED, bg);
-          tft.setTextSize(2); tft.setCursor(115, y + 14); tft.print("Turn Off");
-          break;
-      }
-    }
+    if (dispMenuSel >= 0 && dispMenuSel < SIMPLE_MENU_COUNT) drawSimpleMenuRow(dispMenuSel, false);
+    drawSimpleMenuRow(sel, true);
     dispMenuSel = sel;
   }
 }
@@ -378,7 +360,7 @@ inline void handleSimpleMenuEncoder(int32_t delta) {
   simpleMenuSel = (SimpleMenuItem)idx;
 }
 
-// Returns true if the click was handled by shared logic (volume/switch/off)
+// Returns true if the click was handled by shared logic (volume/switch/off). Timer Mode is the Quick Timer's own.
 inline bool handleSimpleMenuClick() {
   switch (simpleMenuSel) {
     case SimpleMenuItem::VOLUME:
@@ -397,6 +379,8 @@ inline bool handleSimpleMenuClick() {
     case SimpleMenuItem::TURN_OFF:
       turnOff();
       return true;
+    case SimpleMenuItem::TIMER_MODE:
+      return false;
   }
   return false;
 }

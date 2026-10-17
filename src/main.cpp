@@ -23,6 +23,7 @@ Preferences prefs;
 
 ActiveApp   activeApp   = ActiveApp::LAUNCHER;
 VolumeLevel volumeLevel = VolumeLevel::VOL_HIGH;
+QTUnits     qtUnits     = QTUnits::MIN_SEC;
 bool        deviceOn    = false;
 bool        needsFullRedraw = true;
 
@@ -73,6 +74,7 @@ void saveSettings() {
   prefs.putInt("focusDur", pomFocusSec);
   prefs.putInt("breakDur", pomBreakSec);
   prefs.putBool("autoCont", pomAutoContinue);
+  prefs.putUChar("qtUnits", (uint8_t)qtUnits);
   prefs.end();
 }
 
@@ -83,6 +85,7 @@ void loadSettings() {
   pomFocusSec     = prefs.getInt("focusDur", 50 * 60);
   pomBreakSec     = prefs.getInt("breakDur", 25 * 60);
   pomAutoContinue = prefs.getBool("autoCont", true);
+  qtUnits         = qtUnitsFromStored(prefs.getUChar("qtUnits", (uint8_t)QTUnits::MIN_SEC));
   prefs.end();
   pomRemaining = pomFocusSec;
 }

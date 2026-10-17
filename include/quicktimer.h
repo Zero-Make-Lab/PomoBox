@@ -3,23 +3,32 @@
 #include "qt_time.h"
 
 // =============================================================================
-// Quick Timer App - Countdown Timer, set in hours and minutes (up to 12 hours)
+// Quick Timer App - Countdown Timer, set as MM:SS (up to 60 min) or HH:MM (up to 12 h)
+// The mode is Settings > Timer Mode; the screen always sets the left field, then the right.
 // =============================================================================
 
-enum class QTState { SETTING_HOURS, SETTING_MIN, RUNNING, PAUSED, DONE, MENU };
+enum class QTState { SETTING_LEFT, SETTING_RIGHT, RUNNING, PAUSED, DONE, MENU };
 
 // --- State ---
-static QTState  qtState     = QTState::SETTING_HOURS;
-static int32_t  qtSetHours  = 0;
-static int32_t  qtSetMin    = 5;
+static QTState  qtState     = QTState::SETTING_LEFT;
+static int32_t  qtSetLeft   = 0;      // minutes (MM:SS) or hours (HH:MM)
+static int32_t  qtSetRight  = 0;      // seconds (MM:SS) or minutes (HH:MM)
+static bool     qtFieldsSet = false;  // fields filled for the saved mode
 static int32_t  qtRemaining = 0;
 static int32_t  qtTotalSec  = 0;
 static uint32_t qtLastTick  = 0;
 
 // --- Display cache ---
-static QTState lastQTState = QTState::SETTING_HOURS;
+static QTState lastQTState = QTState::SETTING_LEFT;
 static char    qtShown[12] = "";  // the digits on screen; "" redraws them all
 static uint8_t qtShownSize = 0;
+
+// The saved mode is only known after loadSettings(), so the fields start at 5 minutes on first use.
+static void qtEnsureFields() {
+  if (qtFieldsSet) return;
+  qtSplitTotal(qtUnits, 5 * 60, qtSetLeft, qtSetRight);
+  qtFieldsSet = true;
+}
 
 // --- Timer Tick ---
 
@@ -56,10 +65,10 @@ static void qtDrawDigits(const char *text, uint16_t accent) {
   for (size_t i = 0; text[i]; i++) {
     if (!relayout && qtShown[0] && text[i] == qtShown[i]) continue;
 
-    // While setting, the field being set is bright and the rest dim: HH (0-1) : MM (3-4)
+    // While setting, the field being set is bright and the rest dim: left (0-1) : right (3-4)
     uint16_t color = COLOR_TEXT;
-    if (qtState == QTState::SETTING_HOURS) color = i < 2 ? COLOR_TEXT : COLOR_TEXT_DIM;
-    else if (qtState == QTState::SETTING_MIN) color = i > 2 ? COLOR_TEXT : COLOR_TEXT_DIM;
+    if (qtState == QTState::SETTING_LEFT) color = i < 2 ? COLOR_TEXT : COLOR_TEXT_DIM;
+    else if (qtState == QTState::SETTING_RIGHT) color = i > 2 ? COLOR_TEXT : COLOR_TEXT_DIM;
     else if (qtState == QTState::DONE) color = accent;
 
     tft.setTextColor(color, COLOR_BG);
@@ -77,7 +86,7 @@ static void drawQTTimerScreen() {
   if (qtState == QTState::PAUSED) accent = COLOR_ACCENT_PAUSE;
   if (qtState == QTState::DONE) accent = COLOR_ACCENT_BREAK;
 
-  bool isSetting = (qtState == QTState::SETTING_HOURS || qtState == QTState::SETTING_MIN);
+  bool isSetting = (qtState == QTState::SETTING_LEFT || qtState == QTState::SETTING_RIGHT);
 
   if (needsFullRedraw || lastQTState != qtState || dispApp != ActiveApp::QUICK_TIMER) {
     tft.fillScreen(COLOR_BG);
@@ -100,22 +109,23 @@ static void drawQTTimerScreen() {
     tft.setTextColor(COLOR_TEXT, COLOR_SURFACE);
     tft.setTextSize(2);
     tft.setCursor(70, 43);
+    const bool hm = qtUnits == QTUnits::HOUR_MIN;
     switch (qtState) {
-      case QTState::SETTING_HOURS: tft.print("Set Hours");       break;
-      case QTState::SETTING_MIN:   tft.print("Set Minutes");     break;
-      case QTState::RUNNING:       tft.print("Counting Down");   break;
-      case QTState::PAUSED:        tft.print("Paused");          break;
-      case QTState::DONE:          tft.print("Time's Up!");      break;
+      case QTState::SETTING_LEFT:  tft.print(hm ? "Set Hours" : "Set Minutes");   break;
+      case QTState::SETTING_RIGHT: tft.print(hm ? "Set Minutes" : "Set Seconds"); break;
+      case QTState::RUNNING:       tft.print("Counting Down"); break;
+      case QTState::PAUSED:        tft.print("Paused");        break;
+      case QTState::DONE:          tft.print("Time's Up!");    break;
       default: break;
     }
 
     tft.setTextColor(COLOR_TEXT_DIM, COLOR_SURFACE);
     tft.setTextSize(1);
     tft.setCursor(70, 65);
-    if (qtState == QTState::SETTING_HOURS) {
-      tft.print("Rotate to set hours (up to 12)");
-    } else if (qtState == QTState::SETTING_MIN) {
-      tft.print("Rotate to set minutes");
+    if (qtState == QTState::SETTING_LEFT) {
+      tft.print(hm ? "Rotate to set hours (up to 12)" : "Rotate to set minutes (up to 60)");
+    } else if (qtState == QTState::SETTING_RIGHT) {
+      tft.print(hm ? "Rotate to set minutes" : "Rotate to set seconds");
     } else {
       char total[16];
       qtFormatTotal(total, sizeof total, qtTotalSec);
@@ -134,10 +144,10 @@ static void drawQTTimerScreen() {
       tft.fillTriangle(290, 140, 282, 130, 282, 150, COLOR_TEXT_DIM);
       tft.setTextColor(COLOR_TEXT_DIM, COLOR_BG);
       tft.setTextSize(1);
-      tft.setCursor(82, 177);
-      tft.print("hours");
+      tft.setCursor(hm ? 82 : 88, 177);
+      tft.print(hm ? "hours" : "min");
       tft.setCursor(214, 177);
-      tft.print("min");
+      tft.print(hm ? "min" : "sec");
     }
 
     // Hints
@@ -145,8 +155,8 @@ static void drawQTTimerScreen() {
     tft.setTextSize(1);
     tft.setCursor(65, 215);
     switch (qtState) {
-      case QTState::SETTING_HOURS: tft.print("rotate: set hr  click: set min"); break;
-      case QTState::SETTING_MIN:   tft.print("rotate: set min  click: start");  break;
+      case QTState::SETTING_LEFT:  tft.print(hm ? "rotate: set hr  click: set min" : "rotate: set min  click: set sec"); break;
+      case QTState::SETTING_RIGHT: tft.print(hm ? "rotate: set min  click: start" : "rotate: set sec  click: start");  break;
       case QTState::RUNNING:       tft.print("click: pause");                    break;
       case QTState::PAUSED:        tft.print("click: resume  rotate: +/- 1m");  break;
       case QTState::DONE:          tft.print("click: reset");                    break;
@@ -162,13 +172,13 @@ static void drawQTTimerScreen() {
   }
 
   // Time display
-  int32_t displaySec = isSetting ? (qtSetHours * 3600 + qtSetMin * 60) : qtRemaining;
+  int32_t displaySec = isSetting ? qtSetLeft * 60 + qtSetRight : qtRemaining;  // a change key, not a duration
 
   if (displaySec != dispTime) {
     if (dispTime == -1) qtShownSize = 0;  // the screen was cleared: draw every digit
 
     char text[12];
-    if (isSetting) qtFormatSetting(text, sizeof text, qtSetHours, qtSetMin);
+    if (isSetting) qtFormatSetting(text, sizeof text, qtSetLeft, qtSetRight);
     else           qtFormatRemaining(text, sizeof text, qtRemaining);
     qtDrawDigits(text, accent);
 
@@ -195,17 +205,18 @@ static void qtEnterMenu() {
 
 static void qtExitMenu() {
   if (qtRemaining > 0) qtState = QTState::PAUSED;
-  else qtState = QTState::SETTING_HOURS;
+  else qtState = QTState::SETTING_LEFT;
   needsFullRedraw = true;
 }
 
 static void qtHandleEncoder(int32_t delta) {
-  if (qtState == QTState::SETTING_HOURS) {
-    qtStepHours(qtSetHours, qtSetMin, -delta);
-  } else if (qtState == QTState::SETTING_MIN) {
-    qtStepMinutes(qtSetHours, qtSetMin, -delta);
+  qtEnsureFields();
+  if (qtState == QTState::SETTING_LEFT) {
+    qtStepLeft(qtUnits, qtSetLeft, qtSetRight, -delta);
+  } else if (qtState == QTState::SETTING_RIGHT) {
+    qtStepRight(qtUnits, qtSetLeft, qtSetRight, -delta);
   } else if (qtState == QTState::PAUSED) {
-    qtRemaining = qtNudgeRemaining(qtRemaining, -delta);
+    qtRemaining = qtNudgeRemaining(qtUnits, qtRemaining, -delta);
     // Adjust total for progress bar
     if (qtTotalSec < qtRemaining) qtTotalSec = qtRemaining;
     dispTime = -1;
@@ -216,19 +227,28 @@ static void qtHandleEncoder(int32_t delta) {
 }
 
 static void qtHandleClick() {
+  qtEnsureFields();
   if (qtState == QTState::MENU) {
-    handleSimpleMenuClick();
+    if (!handleSimpleMenuClick() && simpleMenuSel == SimpleMenuItem::TIMER_MODE) {
+      // Switch MM:SS <-> HH:MM, keeping the set time where it fits
+      int32_t total = qtSetTotal(qtUnits, qtSetLeft, qtSetRight);
+      qtUnits = qtUnits == QTUnits::HOUR_MIN ? QTUnits::MIN_SEC : QTUnits::HOUR_MIN;
+      qtSplitTotal(qtUnits, total, qtSetLeft, qtSetRight);
+      saveSettings();
+      playClickSound();
+      needsFullRedraw = true;
+    }
     return;
   }
 
   switch (qtState) {
-    case QTState::SETTING_HOURS:
-      qtState = QTState::SETTING_MIN;
+    case QTState::SETTING_LEFT:
+      qtState = QTState::SETTING_RIGHT;
       playClickSound();
       needsFullRedraw = true;
       break;
-    case QTState::SETTING_MIN:
-      qtRemaining = qtSetTotal(qtSetHours, qtSetMin);
+    case QTState::SETTING_RIGHT:
+      qtRemaining = qtSetTotal(qtUnits, qtSetLeft, qtSetRight);
       qtTotalSec = qtRemaining;
       qtState = QTState::RUNNING;
       qtLastTick = millis();
@@ -247,7 +267,7 @@ static void qtHandleClick() {
       needsFullRedraw = true;
       break;
     case QTState::DONE:
-      qtState = QTState::SETTING_HOURS;
+      qtState = QTState::SETTING_LEFT;
       qtRemaining = 0;
       playClickSound();
       needsFullRedraw = true;
@@ -262,6 +282,7 @@ static void qtHandleLongPress() {
 }
 
 static void qtDraw() {
+  qtEnsureFields();
   if (qtState == QTState::MENU) drawSimpleMenu("Settings");
   else drawQTTimerScreen();
 }
