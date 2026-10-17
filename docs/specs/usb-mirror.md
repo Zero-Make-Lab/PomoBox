@@ -11,9 +11,12 @@ there. Transport is the USB cable that is already plugged in (Bluetooth and Wi-F
   ("Connected" or "Plug in USB and open the address"). Click or hold goes back.
 - On the PC, Chrome or Edge opens zeromakelab.com/mirror. The first visit needs one **Connect** click to pick
   the port (the browser requires it); later visits reconnect by themselves.
-- The page shows an exact copy of the screen, every app, as it is drawn. It controls the PomoBox like the
-  knob: mouse wheel or arrow keys turn, a click or Enter clicks, holding the mouse button or H holds (opens
-  Settings). A click on the page also switches the PomoBox on from the soft-off state, like the knob does.
+- The page shows an exact copy of the screen, every app, as it is drawn, inside the website simulator's 3D
+  PomoBox. It controls the PomoBox like the knob, with the simulator's controls: Turn left / Press / Turn
+  right / Hold buttons; the 3D knob (click presses, a long press holds, the mouse wheel over it turns); and,
+  on the focused PomoBox, the arrow keys turn, Enter or Space presses and Escape holds. The wheel turns only
+  over the knob, so it still scrolls the page elsewhere. A press from the page also switches the PomoBox on
+  from the soft-off state, like the knob does.
 
 ## How it works
 
@@ -70,8 +73,10 @@ PC input goes through the same dispatch as the knob, with the same knob sounds.
 
 - Firmware: `include/mirror_proto.h` (pure: frame encoding, line parsing, session timing; host-tested),
   `include/platform/display.h` (the mirroring wrapper), `src/main.cpp` (serial in, input injection).
-- Page: `mirror/` in this repo is the source (`index.html`, `mirror.js`, decoder tests). The website gets a
-  byte-identical copy at `public/mirror/` in Zero-Make-Lab/zeromakelabweb when it deploys.
+- Page: in Zero-Make-Lab/zeromakelabweb, because it reuses the simulator's 3D view and the site's styles:
+  `public/mirror.html`, `mirror.js`, `mirror-protocol.js` (the decoder), `mirror.css`, and
+  `tests/mirror-protocol.test.mjs`. `mirror/golden.hex` here is the contract fixture; the website keeps a
+  byte-identical copy at `tests/fixtures/mirror-golden.hex`. Change both together.
 
 ## Tests
 
