@@ -30,6 +30,7 @@ static bool     mirrorAsked     = false;
 static uint32_t mirrorAskedMs   = 0;
 
 static void requestMirrorOpen() {
+  mirrorResumeMark(true);  // first: the hand-off may restart the board
   Serial.println(MIRROR_OPEN_REQUEST);
   mirrorAsked   = true;
   mirrorAskedMs = millis();
@@ -111,6 +112,7 @@ static void drawMirrorInfo() {
   printCentered(detail, 172, 1);
   printCentered(hint, 228, 1);
 
+  if (link == MirrorLink::NO_ANSWER) mirrorResumeMark(false);  // nobody took the port: nothing to resume into
   mirrorInfoShown = (int)link;
   needsFullRedraw = false;
 }

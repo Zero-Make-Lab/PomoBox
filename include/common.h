@@ -280,6 +280,9 @@ void turnOn();
 
 // USB mirror (docs/specs/usb-mirror.md): a page on the PC is listening
 bool mirrorConnected();
+// The PomoBox asked the PC to open the mirror. Saved, so a board that restarts when the PC opens its port (DTR not
+// wired: Chrome's open presses reset) comes back on at the PC Mirror screen instead of in the soft off.
+void mirrorResumeMark(bool asked);
 
 // =============================================================================
 // Shared Simple Menu (the Quick Timer's settings)

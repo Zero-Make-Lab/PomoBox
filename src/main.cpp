@@ -62,6 +62,7 @@ void turnOn();
 #include "dice.h"
 #include "metronome.h"
 #include "device_settings.h"
+#include "serial_update.h"
 
 // =============================================================================
 // Storage (NVS)
@@ -297,7 +298,19 @@ bool mirrorConnected() { return mirrorSession.active; }
 static void mirrorWrite(const uint8_t *frame, size_t len) { Serial.write(frame, len); }
 
 // A page said hello: tell it the screen size and state, then draw the whole screen into it
+// One saved flag, written only when it changes (NVS wear)
+static bool mirrorResumeSaved = false;
+
+void mirrorResumeMark(bool asked) {
+  if (asked == mirrorResumeSaved) return;
+  mirrorResumeSaved = asked;
+  prefs.begin("zerotimer", false);
+  prefs.putBool("mirrorAsk", asked);
+  prefs.end();
+}
+
 static void mirrorStart() {
+  mirrorResumeMark(false);  // the page is here: a later restart is not the hand-off
   uint8_t f[MIRROR_FRAME_MAX];
   Serial.write(f, mirrorFrameInfo(f, tft.width(), tft.height()));
   Serial.write(f, mirrorFramePower(f, deviceOn));
@@ -318,6 +331,98 @@ struct MirrorInput {
   bool    hold;
 };
 
+// =============================================================================
+// Update over USB, no BOOT button (serial_update.h, docs/specs/usb-mirror.md)
+// =============================================================================
+
+#if defined(ARDUINO_ARCH_ESP32)
+#include <Update.h>
+#endif
+
+static struct {
+  bool     active;
+  uint32_t size, received, lastMs;
+  uint8_t  shownPercent;
+} upd;
+
+static void updateSay(const char *what) {
+  Serial.print("@pomobox update ");
+  Serial.println(what);
+}
+
+static void drawUpdateScreen(uint8_t percent, bool full) {
+  if (full) {
+    digitalWrite(TFT_LED, HIGH);  // also from the soft off
+    displaySleep(false);
+    tft.fillScreen(COLOR_BG);
+    tft.setTextColor(COLOR_TEXT, COLOR_BG);
+    printCentered("Updating", 70, 3);
+    tft.setTextColor(COLOR_TEXT_DIM, COLOR_BG);
+    printCentered("Keep the USB cable plugged in", 112, 1);
+    tft.fillRoundRect(30, 140, 260, 12, 6, COLOR_SURFACE);
+  }
+  int16_t w = (int16_t)(260L * percent / 100);
+  if (w > 0) tft.fillRoundRect(30, 140, w, 12, 6, COLOR_ACCENT_FOCUS);
+  upd.shownPercent = percent;
+}
+
+static void updateFail(const char *reason) {
+#if defined(ARDUINO_ARCH_ESP32)
+  Update.abort();
+#endif
+  upd.active = false;
+  char msg[64];
+  snprintf(msg, sizeof msg, "error %s", reason);
+  updateSay(msg);
+  needsFullRedraw = true;  // back to what was on screen; the running firmware stays
+  if (!deviceOn) { tft.fillScreen(0x0000); displaySleep(true); digitalWrite(TFT_LED, LOW); }
+}
+
+static void updateBegin(const char *line) {
+  UpdateRequest req;
+  if (!parseUpdateCommand(line, req)) { updateSay("error bad-command"); return; }
+#if defined(ARDUINO_ARCH_ESP32)
+  mirrorStop();  // no frames between the acks; the page says hello again after the restart
+  mirrorSession.active = false;
+  if (!Update.begin(req.size)) { updateSay("error no-space"); return; }
+  Update.setMD5(req.md5);
+  upd = {true, req.size, 0, millis(), 0};
+  drawUpdateScreen(0, true);
+  updateSay("ready");
+#else
+  updateSay("error unsupported");
+#endif
+}
+
+// While an update runs, the loop does only this
+static void updatePump() {
+#if defined(ARDUINO_ARCH_ESP32)
+  static uint8_t buf[1024];
+  uint32_t n;
+  while ((n = updateTake(upd.size, upd.received, (uint32_t)Serial.available(), sizeof buf)) > 0) {
+    n = (uint32_t)Serial.readBytes(buf, n);
+    if (Update.write(buf, n) != n) { updateFail("write"); return; }
+    upd.received += n;
+    upd.lastMs = millis();
+    if (updateShouldAck(upd.received, upd.size)) {
+      char msg[40];
+      snprintf(msg, sizeof msg, "ack %lu", (unsigned long)upd.received);
+      updateSay(msg);
+    }
+  }
+  uint8_t pct = updatePercent(upd.received, upd.size);
+  if (pct != upd.shownPercent) drawUpdateScreen(pct, false);
+  if (upd.received == upd.size) {
+    if (!Update.end()) { updateFail(Update.md5String().length() ? "checksum" : "finish"); return; }
+    updateSay("done");
+    Serial.flush();
+    delay(300);
+    ESP.restart();
+  }
+  if (millis() - upd.lastMs > UPDATE_IDLE_MS) updateFail("timeout");
+#endif
+}
+
 static MirrorInput pollMirror() {
   MirrorInput in{};
   while (Serial.available() > 0) {
@@ -330,6 +435,10 @@ static MirrorInput pollMirror() {
       case MirrorCmd::TURN:  in.turn += turn;  break;
       case MirrorCmd::CLICK: in.click = true;  break;
       case MirrorCmd::HOLD:  in.hold  = true;  break;
+      case MirrorCmd::UPDATE:
+        updateBegin(mirrorLine.buf);
+        if (upd.active) return in;  // what follows on the link is the image, not lines
+        break;
       default: break;
     }
   }
@@ -348,6 +457,7 @@ void setup() {
   powerHold();  // C6: power peripherals before driving their inputs or starting SPI
 #if defined(ARDUINO_ARCH_ESP32)
   Serial.setTxBufferSize(8192);  // a whole-screen redraw while mirroring fits without stalling the panel
+  Serial.setRxBufferSize(8192);  // a whole update block arrives before the loop reads it
 #endif
   Serial.begin(MIRROR_BAUD);
   delay(200);
@@ -403,6 +513,19 @@ void setup() {
   powerRelease();
   Serial.println("Press button to start...");
   // loop() waits in the soft off for a press of the knob, or a click on the PC mirror page
+
+  // Restarted by the PC taking the port right after PC Mirror asked for it: come back on, at that screen
+  prefs.begin("zerotimer", true);
+  mirrorResumeSaved = prefs.getBool("mirrorAsk", false);
+  prefs.end();
+  if (mirrorResumeSaved) {
+    Serial.println("Resuming PC Mirror");
+    turnOn();
+    mirrorInfoOpen  = true;
+    mirrorAsked     = true;  // shows "Opening on your PC" until the page says hello
+    mirrorAskedMs   = millis();
+    mirrorInfoShown = -1;
+  }
 }
 
 // On battery (rev C, DIY board): the cell is nearly empty. Say so, then save and switch off while the 3.3 V supply
@@ -419,7 +542,9 @@ static void lowBatteryOff() {
 }
 
 void loop() {
+  if (upd.active) { updatePump(); return; }
   MirrorInput pc = pollMirror();
+  if (upd.active) return;
 
   // Handle OFF state
   if (!deviceOn) {
