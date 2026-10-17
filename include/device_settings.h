@@ -21,13 +21,26 @@ inline const char *volumeName() {
 }
 
 // --- PC Mirror screen: drawn over whichever menu opened it ---
+// Opening it asks the PC to open the page (the PomoBox helper does, docs/specs/usb-mirror.md); a click asks again,
+// or goes back once connected; a hold goes back.
 
-static bool mirrorInfoOpen  = false;
-static int  mirrorInfoShown = -1;  // the link state on screen (0/1); -1 draws it again
+static bool     mirrorInfoOpen  = false;
+static int      mirrorInfoShown = -1;  // the MirrorLink state on screen; -1 draws it again
+static bool     mirrorAsked     = false;
+static uint32_t mirrorAskedMs   = 0;
+
+static void requestMirrorOpen() {
+  Serial.println(MIRROR_OPEN_REQUEST);
+  mirrorAsked   = true;
+  mirrorAskedMs = millis();
+  mirrorInfoShown = -1;
+}
 
 static void openMirrorInfo() {
   mirrorInfoOpen  = true;
   mirrorInfoShown = -1;
+  mirrorAsked     = false;
+  if (!mirrorConnected()) requestMirrorOpen();
   playClickSound();
 }
 
@@ -37,6 +50,12 @@ static void closeMirrorInfo() {
   playMenuSound();
 }
 
+static void mirrorInfoClick() {
+  if (mirrorConnected()) { closeMirrorInfo(); return; }
+  requestMirrorOpen();
+  playClickSound();
+}
+
 static void printCentered(const char *s, int16_t y, uint8_t size) {
   tft.setTextSize(size);
   tft.setCursor((tft.width() - (int16_t)strlen(s) * 6 * size) / 2, y);
@@ -44,8 +63,8 @@ static void printCentered(const char *s, int16_t y, uint8_t size) {
 }
 
 static void drawMirrorInfo() {
-  int linked = mirrorConnected() ? 1 : 0;
-  if (!needsFullRedraw && linked == mirrorInfoShown) return;
+  MirrorLink link = mirrorLinkState(mirrorConnected(), mirrorAsked, mirrorAskedMs, millis());
+  if (!needsFullRedraw && (int)link == mirrorInfoShown) return;
 
   tft.fillScreen(COLOR_BG);
   tft.setTextColor(COLOR_TEXT, COLOR_BG);
@@ -59,23 +78,40 @@ static void drawMirrorInfo() {
   tft.setTextColor(COLOR_ACCENT_FOCUS, COLOR_SURFACE);
   printCentered(MIRROR_ADDRESS, 95, 2);
 
+  const char *state = "Not connected", *detail = "Click to open it on your PC", *hint = "click: open on PC  hold: back";
+  uint16_t dot = COLOR_TEXT_DIM;
+  bool filled = false;
+  switch (link) {
+    case MirrorLink::IDLE: break;
+    case MirrorLink::OPENING:
+      state = "Opening on your PC"; detail = "Your browser is opening the mirror"; hint = "hold: back";
+      dot = COLOR_ACCENT_QTIMER; filled = true;
+      break;
+    case MirrorLink::NO_ANSWER:
+      state = "No answer from PC"; detail = "Start the PomoBox helper, or open the address";
+      hint = "click: try again  hold: back"; dot = COLOR_ACCENT_PAUSE;
+      break;
+    case MirrorLink::CONNECTED:
+      state = "Connected"; detail = "The page shows this screen live"; hint = "click or hold: back";
+      dot = COLOR_ACCENT_BREAK; filled = true;
+      break;
+  }
+
   // Link state: a dot and a word, centred together
-  const char *state = linked ? "Connected" : "Not connected";
   int16_t w = 16 + (int16_t)strlen(state) * 12;
   int16_t x = (tft.width() - w) / 2;
-  if (linked) tft.fillCircle(x + 5, 151, 5, COLOR_ACCENT_BREAK);
-  else        tft.drawCircle(x + 5, 151, 5, COLOR_TEXT_DIM);
-  tft.setTextColor(linked ? COLOR_TEXT : COLOR_TEXT_DIM, COLOR_BG);
+  if (filled) tft.fillCircle(x + 5, 151, 5, dot);
+  else        tft.drawCircle(x + 5, 151, 5, dot);
+  tft.setTextColor(link == MirrorLink::IDLE ? COLOR_TEXT_DIM : COLOR_TEXT, COLOR_BG);
   tft.setTextSize(2);
   tft.setCursor(x + 16, 144);
   tft.print(state);
 
   tft.setTextColor(COLOR_TEXT_DIM, COLOR_BG);
-  printCentered(linked ? "The page shows this screen live" : "Plug in USB, then click Connect on the page",
-                172, 1);
-  printCentered("click or hold: back", 228, 1);
+  printCentered(detail, 172, 1);
+  printCentered(hint, 228, 1);
 
-  mirrorInfoShown = linked;
+  mirrorInfoShown = (int)link;
   needsFullRedraw = false;
 }
 

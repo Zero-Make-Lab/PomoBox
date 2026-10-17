@@ -141,6 +141,25 @@ void test_input_lines_do_not_start_a_session() {
   TEST_ASSERT_FALSE(s.active);  // only hello starts one
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// PC Mirror screen: asking the PC helper to open the page
+
+void test_open_request_is_one_plain_log_line() {
+  TEST_ASSERT_EQUAL_STRING("@pomobox open-mirror", MIRROR_OPEN_REQUEST);
+  for (const char *c = MIRROR_OPEN_REQUEST; *c; c++) {
+    TEST_ASSERT_TRUE(*c >= 0x20 && *c < 0x7F);  // printable ASCII: never mistaken for a frame (0xA5)
+  }
+}
+
+void test_link_state_on_the_pc_mirror_screen() {
+  TEST_ASSERT_TRUE(mirrorLinkState(false, false, 0, 5000) == MirrorLink::IDLE);
+  TEST_ASSERT_TRUE(mirrorLinkState(false, true, 1000, 1000 + MIRROR_OPEN_WAIT_MS - 1) == MirrorLink::OPENING);
+  TEST_ASSERT_TRUE(mirrorLinkState(false, true, 1000, 1000 + MIRROR_OPEN_WAIT_MS) == MirrorLink::NO_ANSWER);
+  TEST_ASSERT_TRUE(mirrorLinkState(true, true, 1000, 1000 + MIRROR_OPEN_WAIT_MS * 9) == MirrorLink::CONNECTED);
+  TEST_ASSERT_TRUE(mirrorLinkState(true, false, 0, 0) == MirrorLink::CONNECTED);
+  TEST_ASSERT_TRUE(mirrorLinkState(false, true, 0xFFFFFF00u, 0x00000100u) == MirrorLink::OPENING);  // millis wraps
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_encoder_produces_the_golden_stream);
@@ -152,5 +171,7 @@ int main() {
   RUN_TEST(test_session_runs_until_three_seconds_of_silence_or_bye);
   RUN_TEST(test_session_survives_millis_wrapping);
   RUN_TEST(test_input_lines_do_not_start_a_session);
+  RUN_TEST(test_open_request_is_one_plain_log_line);
+  RUN_TEST(test_link_state_on_the_pc_mirror_screen);
   return UNITY_END();
 }

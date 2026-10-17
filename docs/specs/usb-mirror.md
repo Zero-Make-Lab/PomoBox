@@ -18,6 +18,22 @@ there. Transport is the USB cable that is already plugged in (Bluetooth and Wi-F
   over the knob, so it still scrolls the page elsewhere. A press from the page also switches the PomoBox on
   from the soft-off state, like the knob does.
 
+## Opening it from the PomoBox (owner, 2026-10-17)
+
+Choosing **PC Mirror** in Settings opens the page on the PC by itself: one click, no typing the address.
+
+- Over USB serial the PomoBox can only talk to the program holding the port, so a small **PomoBox helper** runs on
+  the PC (`tools/pc-helper/pomobox_helper.py`, Python + pyserial). While no page is connected it holds the port
+  (DTR and RTS released, so the board is never reset) and listens.
+- Opening the PC Mirror screen prints the log line `@pomobox open-mirror` (`MIRROR_OPEN_REQUEST`). The helper lets go
+  of the port and opens the page in the default browser; the page connects to the port it was allowed before. When
+  the page lets go, the helper listens again.
+- The screen shows Opening on your PC, then Connected. With no page after 15 s it says nobody answered: start the
+  helper, or open the address by hand. A click asks again.
+- Starting the helper with Windows is the owner's call (a persistent change to the PC). The first visit to the
+  page still needs one Connect click: browsers only remember a port after the person picks it once.
+- Stop the helper before flashing: the flasher needs the port.
+
 ## How it works
 
 The apps draw through Adafruit GFX. All of its drawing ends in a few virtual primitives (pixel, filled

@@ -120,3 +120,18 @@ inline void mirrorHeard(MirrorSession &s, MirrorCmd cmd, uint32_t now) {
 inline bool mirrorExpired(const MirrorSession &s, uint32_t now) {
   return s.active && (uint32_t)(now - s.lastMs) > MIRROR_SILENCE_MS;
 }
+
+// --- Opening the page from the PomoBox (Settings > PC Mirror) ---
+// The PomoBox prints this log line; the PomoBox helper on the PC (tools/pc-helper) lets go of the port and opens the
+// page, which connects by itself. Printable ASCII, so the page never reads it as a frame.
+
+static constexpr const char *MIRROR_OPEN_REQUEST = "@pomobox open-mirror";
+static constexpr uint32_t    MIRROR_OPEN_WAIT_MS = 15000;  // asked this long ago with no page: say nobody answered
+
+enum class MirrorLink { IDLE, OPENING, NO_ANSWER, CONNECTED };
+
+inline MirrorLink mirrorLinkState(bool connected, bool asked, uint32_t askedMs, uint32_t now) {
+  if (connected) return MirrorLink::CONNECTED;
+  if (!asked) return MirrorLink::IDLE;
+  return (uint32_t)(now - askedMs) < MIRROR_OPEN_WAIT_MS ? MirrorLink::OPENING : MirrorLink::NO_ANSWER;
+}

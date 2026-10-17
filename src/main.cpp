@@ -229,7 +229,7 @@ static void dispatchEncoder(int32_t delta) {
 }
 
 static void dispatchClick() {
-  if (mirrorInfoOpen) { closeMirrorInfo(); return; }
+  if (mirrorInfoOpen) { mirrorInfoClick(); return; }  // ask the PC again, or back once connected
   switch (activeApp) {
     case ActiveApp::LAUNCHER:
       if (settingsOpen) settingsClick();
