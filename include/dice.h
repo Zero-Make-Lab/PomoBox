@@ -1,5 +1,6 @@
 #pragma once
 #include "common.h"
+#include "device_settings.h"
 
 // =============================================================================
 // Dice Roller App
@@ -19,7 +20,7 @@ static int32_t      diceResult = 0;      // 0 = no result yet
 
 // --- Menu ---
 static int diceMenuSel = 0;
-static constexpr int DICE_MENU_COUNT = 3;
+static constexpr int DICE_MENU_COUNT = 4;
 
 // --- Display cache ---
 static int lastDiceType   = -1;
@@ -130,17 +131,17 @@ static void drawDiceScreen() {
 // --- Dice Menu ---
 
 static void drawDiceMenuItemAt(int idx, bool selected) {
-  const int IH = 50, SY = 60;
+  const int IH = 42, SY = 60, TY = 11;  // four rows, the last ending above the hint line
   int16_t y = SY + idx * IH;
   uint16_t bg = selected ? COLOR_SURFACE : COLOR_BG;
-  tft.fillRoundRect(15, y, 290, 44, 8, bg);
+  tft.fillRoundRect(15, y, 290, 38, 8, bg);
 
   switch (idx) {
     case 0: // Volume
       tft.setTextColor(selected ? COLOR_TEXT : COLOR_TEXT_DIM, bg);
-      tft.setTextSize(2); tft.setCursor(25, y + 14); tft.print("Volume");
+      tft.setTextSize(2); tft.setCursor(25, y + TY); tft.print("Volume");
       tft.setTextColor(selected ? COLOR_ACCENT_DICE : COLOR_TEXT_DIM, bg);
-      tft.setCursor(220, y + 14);
+      tft.setCursor(220, y + TY);
       switch (volumeLevel) {
         case VolumeLevel::VOL_MUTE: tft.print("Mute"); break;
         case VolumeLevel::VOL_LOW:  tft.print("Low");  break;
@@ -148,13 +149,16 @@ static void drawDiceMenuItemAt(int idx, bool selected) {
         case VolumeLevel::VOL_HIGH: tft.print("High"); break;
       }
       break;
-    case 1: // Switch App
-      tft.setTextColor(selected ? COLOR_TEXT : COLOR_TEXT_DIM, bg);
-      tft.setTextSize(2); tft.setCursor(100, y + 14); tft.print("Switch App");
+    case 1: // PC Mirror
+      drawMirrorMenuRow(y, TY, selected, bg);
       break;
-    case 2: // Turn Off
+    case 2: // Switch App
+      tft.setTextColor(selected ? COLOR_TEXT : COLOR_TEXT_DIM, bg);
+      tft.setTextSize(2); tft.setCursor(100, y + TY); tft.print("Switch App");
+      break;
+    case 3: // Turn Off
       tft.setTextColor(COLOR_RED, bg);
-      tft.setTextSize(2); tft.setCursor(115, y + 14); tft.print("Turn Off");
+      tft.setTextSize(2); tft.setCursor(115, y + TY); tft.print("Turn Off");
       break;
   }
 }
@@ -210,10 +214,13 @@ static void diceMenuClick() {
       cycleVolume();
       needsFullRedraw = true;
       break;
-    case 1: // Switch App
+    case 1: // PC Mirror
+      openMirrorInfo();
+      break;
+    case 2: // Switch App
       switchToLauncher();
       break;
-    case 2: // Turn Off
+    case 3: // Turn Off
       turnOff();
       break;
   }

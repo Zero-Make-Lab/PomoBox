@@ -1,5 +1,6 @@
 #pragma once
 #include "common.h"
+#include "device_settings.h"
 
 // =============================================================================
 // Metronome App - BPM Beat Keeper with Visual & Audio
@@ -22,7 +23,7 @@ static constexpr uint32_t METRO_TICK_MS = 12;  // Buzz duration
 
 // --- Menu ---
 static int metroMenuSel = 0;
-static constexpr int METRO_MENU_COUNT = 3;
+static constexpr int METRO_MENU_COUNT = 4;
 
 // --- Display cache ---
 static int32_t lastMetroBPM  = -1;
@@ -192,17 +193,17 @@ static void drawMetroScreen() {
 // --- Metronome Menu ---
 
 static void drawMetroMenuItemAt(int idx, bool selected) {
-  const int IH = 50, SY = 60;
+  const int IH = 42, SY = 60, TY = 11;  // four rows, the last ending above the hint line
   int16_t y = SY + idx * IH;
   uint16_t bg = selected ? COLOR_SURFACE : COLOR_BG;
-  tft.fillRoundRect(15, y, 290, 44, 8, bg);
+  tft.fillRoundRect(15, y, 290, 38, 8, bg);
 
   switch (idx) {
     case 0: // Volume
       tft.setTextColor(selected ? COLOR_TEXT : COLOR_TEXT_DIM, bg);
-      tft.setTextSize(2); tft.setCursor(25, y + 14); tft.print("Volume");
+      tft.setTextSize(2); tft.setCursor(25, y + TY); tft.print("Volume");
       tft.setTextColor(selected ? COLOR_ACCENT_METRO : COLOR_TEXT_DIM, bg);
-      tft.setCursor(220, y + 14);
+      tft.setCursor(220, y + TY);
       switch (volumeLevel) {
         case VolumeLevel::VOL_MUTE: tft.print("Mute"); break;
         case VolumeLevel::VOL_LOW:  tft.print("Low");  break;
@@ -210,13 +211,16 @@ static void drawMetroMenuItemAt(int idx, bool selected) {
         case VolumeLevel::VOL_HIGH: tft.print("High"); break;
       }
       break;
-    case 1: // Switch App
-      tft.setTextColor(selected ? COLOR_TEXT : COLOR_TEXT_DIM, bg);
-      tft.setTextSize(2); tft.setCursor(100, y + 14); tft.print("Switch App");
+    case 1: // PC Mirror
+      drawMirrorMenuRow(y, TY, selected, bg);
       break;
-    case 2: // Turn Off
+    case 2: // Switch App
+      tft.setTextColor(selected ? COLOR_TEXT : COLOR_TEXT_DIM, bg);
+      tft.setTextSize(2); tft.setCursor(100, y + TY); tft.print("Switch App");
+      break;
+    case 3: // Turn Off
       tft.setTextColor(COLOR_RED, bg);
-      tft.setTextSize(2); tft.setCursor(115, y + 14); tft.print("Turn Off");
+      tft.setTextSize(2); tft.setCursor(115, y + TY); tft.print("Turn Off");
       break;
   }
 }
@@ -277,14 +281,17 @@ static void metroMenuClick() {
       cycleVolume();
       needsFullRedraw = true;
       break;
-    case 1: // Switch App
+    case 1: // PC Mirror
+      openMirrorInfo();
+      break;
+    case 2: // Switch App
       if (metroState == MetroState::PLAYING) {
         pomoLedcWriteTone(BUZZER_CHANNEL, 0);
         metroBuzzing = false;
       }
       switchToLauncher();
       break;
-    case 2: // Turn Off
+    case 3: // Turn Off
       if (metroState == MetroState::PLAYING) {
         pomoLedcWriteTone(BUZZER_CHANNEL, 0);
         metroBuzzing = false;

@@ -1,14 +1,15 @@
 #pragma once
 #include "common.h"
+#include "device_settings.h"
 
 // =============================================================================
 // Counter / Tally App
 // =============================================================================
 
 enum class CTState { COUNTING, MENU };
-enum class CTMenuItem { VOLUME, RESET_COUNT, SWITCH_APP, TURN_OFF };
+enum class CTMenuItem { VOLUME, RESET_COUNT, PC_MIRROR, SWITCH_APP, TURN_OFF };
 
-static constexpr int CT_MENU_COUNT = 4;
+static constexpr int CT_MENU_COUNT = 5;
 
 // --- State ---
 static CTState    ctState   = CTState::COUNTING;
@@ -86,17 +87,17 @@ static void drawCTScreen() {
 // --- Counter Menu ---
 
 static void drawCTMenuItemAt(int idx, bool selected) {
-  const int IH = 44, SY = 60;
+  const int IH = 34, SY = 56, TY = 8;  // five rows, the last ending above the hint line
   int16_t y = SY + idx * IH;
   uint16_t bg = selected ? COLOR_SURFACE : COLOR_BG;
-  tft.fillRoundRect(15, y, 290, 40, 8, bg);
+  tft.fillRoundRect(15, y, 290, 31, 8, bg);
 
   switch (idx) {
     case 0: // Volume
       tft.setTextColor(selected ? COLOR_TEXT : COLOR_TEXT_DIM, bg);
-      tft.setTextSize(2); tft.setCursor(25, y + 12); tft.print("Volume");
+      tft.setTextSize(2); tft.setCursor(25, y + TY); tft.print("Volume");
       tft.setTextColor(selected ? COLOR_ACCENT_COUNTER : COLOR_TEXT_DIM, bg);
-      tft.setCursor(220, y + 12);
+      tft.setCursor(220, y + TY);
       switch (volumeLevel) {
         case VolumeLevel::VOL_MUTE: tft.print("Mute"); break;
         case VolumeLevel::VOL_LOW:  tft.print("Low");  break;
@@ -106,17 +107,20 @@ static void drawCTMenuItemAt(int idx, bool selected) {
       break;
     case 1: // Reset Counter
       tft.setTextColor(selected ? COLOR_TEXT : COLOR_TEXT_DIM, bg);
-      tft.setTextSize(2); tft.setCursor(25, y + 12); tft.print("Reset Count");
+      tft.setTextSize(2); tft.setCursor(25, y + TY); tft.print("Reset Count");
       tft.setTextColor(selected ? COLOR_ACCENT_COUNTER : COLOR_TEXT_DIM, bg);
-      tft.setCursor(250, y + 12); tft.print(ctCount);
+      tft.setCursor(250, y + TY); tft.print(ctCount);
       break;
-    case 2: // Switch App
+    case 2: // PC Mirror
+      drawMirrorMenuRow(y, TY, selected, bg);
+      break;
+    case 3: // Switch App
       tft.setTextColor(selected ? COLOR_TEXT : COLOR_TEXT_DIM, bg);
-      tft.setTextSize(2); tft.setCursor(100, y + 12); tft.print("Switch App");
+      tft.setTextSize(2); tft.setCursor(100, y + TY); tft.print("Switch App");
       break;
-    case 3: // Turn Off
+    case 4: // Turn Off
       tft.setTextColor(COLOR_RED, bg);
-      tft.setTextSize(2); tft.setCursor(115, y + 12); tft.print("Turn Off");
+      tft.setTextSize(2); tft.setCursor(115, y + TY); tft.print("Turn Off");
       break;
   }
 }
@@ -176,6 +180,9 @@ static void ctMenuClick() {
       ctCount = 0;
       playClickSound();
       needsFullRedraw = true;
+      break;
+    case CTMenuItem::PC_MIRROR:
+      openMirrorInfo();
       break;
     case CTMenuItem::SWITCH_APP:
       switchToLauncher();

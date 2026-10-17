@@ -23,6 +23,7 @@ Preferences prefs;
 
 ActiveApp   activeApp   = ActiveApp::LAUNCHER;
 VolumeLevel volumeLevel = VolumeLevel::VOL_HIGH;
+QTUnits     qtUnits     = QTUnits::MIN_SEC;
 bool        deviceOn    = false;
 bool        needsFullRedraw = true;
 
@@ -60,6 +61,8 @@ void turnOn();
 #include "counter.h"
 #include "dice.h"
 #include "metronome.h"
+#include "device_settings.h"
+#include "serial_update.h"
 
 // =============================================================================
 // Storage (NVS)
@@ -73,6 +76,7 @@ void saveSettings() {
   prefs.putInt("focusDur", pomFocusSec);
   prefs.putInt("breakDur", pomBreakSec);
   prefs.putBool("autoCont", pomAutoContinue);
+  prefs.putUChar("qtUnits", (uint8_t)qtUnits);
   prefs.end();
 }
 
@@ -83,6 +87,7 @@ void loadSettings() {
   pomFocusSec     = prefs.getInt("focusDur", 50 * 60);
   pomBreakSec     = prefs.getInt("breakDur", 25 * 60);
   pomAutoContinue = prefs.getBool("autoCont", true);
+  qtUnits         = qtUnitsFromStored(prefs.getUChar("qtUnits", (uint8_t)QTUnits::MIN_SEC));
   prefs.end();
   pomRemaining = pomFocusSec;
 }
@@ -105,6 +110,8 @@ void turnOff() {
 
 void turnOn() {
   powerHold();
+  mirrorInfoOpen = false;
+  settingsOpen   = false;
   digitalWrite(TFT_LED, HIGH);
   displaySleep(false);
   deviceOn = true;
@@ -207,8 +214,12 @@ static int readButton() {
 
 static void dispatchEncoder(int32_t delta) {
   if (delta != 0) playKnobSound(KnobSound::TURN);
+  if (mirrorInfoOpen) return;
   switch (activeApp) {
-    case ActiveApp::LAUNCHER:    launcherHandleEncoder(delta); break;
+    case ActiveApp::LAUNCHER:
+      if (settingsOpen) settingsHandleEncoder(delta);
+      else              launcherHandleEncoder(delta);
+      break;
     case ActiveApp::POMODORO:    pomHandleEncoder(delta);      break;
     case ActiveApp::QUICK_TIMER: qtHandleEncoder(delta);       break;
     case ActiveApp::STOPWATCH:   swHandleEncoder(delta);       break;
@@ -219,8 +230,12 @@ static void dispatchEncoder(int32_t delta) {
 }
 
 static void dispatchClick() {
+  if (mirrorInfoOpen) { mirrorInfoClick(); return; }  // ask the PC again, or back once connected
   switch (activeApp) {
-    case ActiveApp::LAUNCHER:    launcherClick();    break;
+    case ActiveApp::LAUNCHER:
+      if (settingsOpen) settingsClick();
+      else              launcherClick();
+      break;
     case ActiveApp::POMODORO:    pomHandleClick();   break;
     case ActiveApp::QUICK_TIMER: qtHandleClick();    break;
     case ActiveApp::STOPWATCH:   swHandleClick();    break;
@@ -231,8 +246,12 @@ static void dispatchClick() {
 }
 
 static void dispatchLongPress() {
+  if (mirrorInfoOpen) { closeMirrorInfo(); return; }
   switch (activeApp) {
-    case ActiveApp::LAUNCHER:    break;  // No long press on launcher
+    case ActiveApp::LAUNCHER:
+      if (settingsOpen) closeSettings();
+      else              openSettings();
+      break;
     case ActiveApp::POMODORO:    pomHandleLongPress();  break;
     case ActiveApp::QUICK_TIMER: qtHandleLongPress();   break;
     case ActiveApp::STOPWATCH:   swHandleLongPress();   break;
@@ -252,8 +271,12 @@ static void dispatchTick() {
 }
 
 static void dispatchDraw() {
+  if (mirrorInfoOpen) { drawMirrorInfo(); return; }
   switch (activeApp) {
-    case ActiveApp::LAUNCHER:    drawLauncherScreen(); break;
+    case ActiveApp::LAUNCHER:
+      if (settingsOpen) drawSettings();
+      else              drawLauncherScreen();
+      break;
     case ActiveApp::POMODORO:    pomDraw();             break;
     case ActiveApp::QUICK_TIMER: qtDraw();              break;
     case ActiveApp::STOPWATCH:   swDraw();              break;
@@ -264,14 +287,244 @@ static void dispatchDraw() {
 }
 
 // =============================================================================
+// USB Screen Mirror (docs/specs/usb-mirror.md)
+// =============================================================================
+
+static MirrorSession mirrorSession{};
+static MirrorLine    mirrorLine{};
+
+bool mirrorConnected() { return mirrorSession.active; }
+
+static void mirrorWrite(const uint8_t *frame, size_t len) { Serial.write(frame, len); }
+
+// A page said hello: tell it the screen size and state, then draw the whole screen into it
+// One saved flag, written only when it changes (NVS wear)
+static bool mirrorResumeSaved = false;
+
+void mirrorResumeMark(bool asked) {
+  if (asked == mirrorResumeSaved) return;
+  mirrorResumeSaved = asked;
+  prefs.begin("zerotimer", false);
+  prefs.putBool("mirrorAsk", asked);
+  prefs.end();
+}
+
+static void mirrorStart() {
+  mirrorResumeMark(false);  // the page is here: a later restart is not the hand-off
+  Serial.print(MIRROR_VERSION_LINE);
+  Serial.println(POMOBOX_VERSION);
+  uint8_t f[MIRROR_FRAME_MAX];
+  Serial.write(f, mirrorFrameInfo(f, tft.width(), tft.height()));
+  Serial.write(f, mirrorFramePower(f, deviceOn));
+  tft.mirrorOut = mirrorWrite;
+  needsFullRedraw = true;
+  mirrorInfoShown = -1;
+}
+
+static void mirrorStop() {
+  tft.mirrorOut = nullptr;
+  mirrorInfoShown = -1;  // the PC Mirror screen shows the change
+}
+
+// Knob input from the page, gathered since the last loop
+struct MirrorInput {
+  int32_t turn;
+  bool    click;
+  bool    hold;
+};
+
+// =============================================================================
+// Update over USB, no BOOT button (serial_update.h, docs/specs/usb-mirror.md)
+// =============================================================================
+
+#if defined(ARDUINO_ARCH_ESP32)
+#include <MD5Builder.h>
+#include <esp_ota_ops.h>
+#endif
+
+// The ESP-IDF OTA calls directly, not the Arduino Update library: that library erases a 64 KB block in the middle of
+// the transfer, and after that erase the PomoBox stopped receiving the image (found live, 2026-10-17). Here the whole
+// target area is erased before "ready", so nothing slow happens while bytes stream in.
+static struct {
+  bool     active;
+  uint32_t size, received, lastMs;
+  uint8_t  shownPercent;
+  char     md5[33];
+#if defined(ARDUINO_ARCH_ESP32)
+  esp_ota_handle_t       handle;
+  const esp_partition_t *slot;
+  MD5Builder             sum;
+#endif
+} upd;
+
+static void updateSay(const char *what) {
+  Serial.print("@pomobox update ");
+  Serial.println(what);
+}
+
+static void drawUpdateScreen(uint8_t percent, bool full, const char *title = "Updating") {
+  if (full) {
+    digitalWrite(TFT_LED, HIGH);  // also from the soft off
+    displaySleep(false);
+    tft.fillScreen(COLOR_BG);
+    tft.setTextColor(COLOR_TEXT, COLOR_BG);
+    printCentered(title, 70, 3);
+    tft.setTextColor(COLOR_TEXT_DIM, COLOR_BG);
+    printCentered("Keep the USB cable plugged in", 112, 1);
+    tft.fillRoundRect(30, 140, 260, 12, 6, COLOR_SURFACE);
+  }
+  int16_t w = (int16_t)(260L * percent / 100);
+  if (w > 0) tft.fillRoundRect(30, 140, w, 12, 6, COLOR_ACCENT_FOCUS);
+  upd.shownPercent = percent;
+}
+
+// How the update ended, on the PomoBox's own screen
+static void drawUpdateResult(bool ok, const char *detail) {
+  tft.fillScreen(COLOR_BG);
+  tft.setTextColor(ok ? COLOR_ACCENT_BREAK : COLOR_RED, COLOR_BG);
+  printCentered(ok ? "Update done" : "Update failed", 80, 3);
+  tft.setTextColor(COLOR_TEXT_DIM, COLOR_BG);
+  printCentered(detail, 124, 1);
+}
+
+static void updateFail(const char *reason) {
+#if defined(ARDUINO_ARCH_ESP32)
+  if (upd.handle) esp_ota_abort(upd.handle);
+  upd.handle = 0;
+#endif
+  bool wasRunning = upd.active;
+  upd.active = false;
+  char msg[80];
+  snprintf(msg, sizeof msg, "error %s", reason);
+  updateSay(msg);
+  if (wasRunning) {
+    drawUpdateResult(false, "Still on v" POMOBOX_VERSION ". Nothing was changed.");
+    delay(2500);
+  }
+  needsFullRedraw = true;  // back to what was on screen; the running firmware stays
+  if (!deviceOn) { tft.fillScreen(0x0000); displaySleep(true); digitalWrite(TFT_LED, LOW); }
+}
+
+static void updateBegin(const char *line) {
+  UpdateRequest req;
+  if (!parseUpdateCommand(line, req)) { updateSay("error bad-command"); return; }
+#if defined(ARDUINO_ARCH_ESP32)
+  mirrorStop();  // no frames between the acks; the page says hello again after the restart
+  mirrorSession.active = false;
+  upd.slot = esp_ota_get_next_update_partition(nullptr);
+  if (!upd.slot || req.size > upd.slot->size) { updateSay("error no-space"); return; }
+  drawUpdateScreen(0, true, "Preparing");
+  // Erases req.size bytes of the other slot now, before any image byte is sent (a few seconds)
+  upd.handle = 0;
+  if (esp_ota_begin(upd.slot, req.size, &upd.handle) != ESP_OK) { updateSay("error erase"); needsFullRedraw = true; return; }
+  upd.sum.begin();
+  memcpy(upd.md5, req.md5, sizeof upd.md5);
+  upd.active = true;
+  upd.size = req.size;
+  upd.received = 0;
+  upd.lastMs = millis();
+  drawUpdateScreen(0, true);
+  updateSay("ready");
+#else
+  updateSay("error unsupported");
+#endif
+}
+
+// While an update runs, the loop does only this
+static void updatePump() {
+#if defined(ARDUINO_ARCH_ESP32)
+  // Gather a whole block in RAM, then write it to flash: never write flash while bytes are still arriving
+  static uint8_t block[UPDATE_BLOCK];
+  uint32_t n;
+  while ((n = updateTake(upd.size, upd.received, (uint32_t)Serial.available(), updateBlockRoom(upd.received))) > 0) {
+    n = (uint32_t)Serial.readBytes(block + upd.received % UPDATE_BLOCK, n);
+    upd.received += n;
+    upd.lastMs = millis();
+    if (updateBlockReady(upd.received, upd.size)) {
+      uint32_t len = (upd.received - 1) % UPDATE_BLOCK + 1;
+      if (esp_ota_write(upd.handle, block, len) != ESP_OK) { updateFail("write"); return; }
+      upd.sum.add(block, len);
+      char msg[40];
+      snprintf(msg, sizeof msg, "ack %lu", (unsigned long)upd.received);
+      updateSay(msg);
+    }
+  }
+  uint8_t pct = updatePercent(upd.received, upd.size);
+  if (pct != upd.shownPercent) drawUpdateScreen(pct, false);
+  if (upd.received == upd.size) {
+    upd.sum.calculate();
+    if (strcmp(upd.sum.toString().c_str(), upd.md5) != 0) { updateFail("checksum"); return; }
+    esp_err_t ended = esp_ota_end(upd.handle);  // checks the image itself: header, segments, checksum
+    upd.handle = 0;
+    if (ended != ESP_OK) { updateFail("bad-image"); return; }
+    if (esp_ota_set_boot_partition(upd.slot) != ESP_OK) { updateFail("boot-slot"); return; }
+    upd.active = false;
+    updateSay("done");
+    drawUpdateResult(true, "Restarting into the new version");
+    Serial.flush();
+    delay(1200);
+    ESP.restart();
+  }
+  if (millis() - upd.lastMs > UPDATE_IDLE_MS) {
+    char why[64];
+    snprintf(why, sizeof why, "timeout got=%lu waiting=%d", (unsigned long)upd.received, Serial.available());
+    updateFail(why);
+  }
+#endif
+}
+
+static MirrorInput pollMirror() {
+  MirrorInput in{};
+  while (Serial.available() > 0) {
+    int32_t turn = 0;
+    MirrorCmd cmd = mirrorFeed(mirrorLine, (char)Serial.read(), turn);
+    mirrorHeard(mirrorSession, cmd, millis());
+    switch (cmd) {
+      case MirrorCmd::HELLO: mirrorStart();    break;
+      case MirrorCmd::BYE:   mirrorStop();     break;
+      case MirrorCmd::TURN:  in.turn += turn;  break;
+      case MirrorCmd::CLICK: in.click = true;  break;
+      case MirrorCmd::HOLD:  in.hold  = true;  break;
+      case MirrorCmd::UPDATE:
+        updateBegin(mirrorLine.buf);
+        if (upd.active) return in;  // what follows on the link is the image, not lines
+        break;
+      default: break;
+    }
+  }
+  if (mirrorExpired(mirrorSession, millis())) {
+    mirrorSession.active = false;
+    mirrorStop();
+  }
+  return in;
+}
+
+// =============================================================================
 // Arduino Setup & Loop
 // =============================================================================
 
+// "Updated" and the version now running, for a moment after a new version's first start
+static void showVersionNotice() {
+  tft.fillScreen(COLOR_BG);
+  tft.setTextColor(COLOR_ACCENT_BREAK, COLOR_BG);
+  printCentered("Updated", 82, 3);
+  tft.setTextColor(COLOR_TEXT, COLOR_BG);
+  printCentered("PomoBox v" POMOBOX_VERSION, 124, 2);
+  playClickSound();
+  delay(2200);
+  needsFullRedraw = true;
+}
+
 void setup() {
   powerHold();  // C6: power peripherals before driving their inputs or starting SPI
-  Serial.begin(115200);
+#if defined(ARDUINO_ARCH_ESP32)
+  Serial.setTxBufferSize(8192);  // a whole-screen redraw while mirroring fits without stalling the panel
+  Serial.setRxBufferSize(8192);  // a whole update block arrives before the loop reads it
+#endif
+  Serial.begin(MIRROR_BAUD);
   delay(200);
   Serial.println("\nPomoBox - Multi-App Platform");
+  Serial.println("Version " POMOBOX_VERSION);
 
   pinMode(ENC_SW, INPUT_PULLUP);
 
@@ -322,14 +575,33 @@ void setup() {
   // board off.
   powerRelease();
   Serial.println("Press button to start...");
+  // loop() waits in the soft off for a press of the knob, or a click on the PC mirror page
 
-  // Wait for button press to turn on
-  while (digitalRead(ENC_SW) == HIGH) { delay(10); }
-  playKnobSound(KnobSound::PRESS);
-  while (digitalRead(ENC_SW) == LOW)  { delay(10); }
-  playKnobSound(KnobSound::RELEASE);
+  // The first start of a new version (zeroFlash, a USB update): switch on and say which one is running now
+  prefs.begin("zerotimer", true);
+  uint32_t lastVersion = prefs.getUInt("fwVersion", 0);
+  prefs.end();
+  if (lastVersion != POMOBOX_VERSION_CODE) {
+    prefs.begin("zerotimer", false);
+    prefs.putUInt("fwVersion", POMOBOX_VERSION_CODE);
+    prefs.end();
+    Serial.println("New version: " POMOBOX_VERSION);
+    turnOn();
+    showVersionNotice();
+  }
 
-  turnOn();
+  // Restarted by the PC taking the port right after PC Mirror asked for it: come back on, at that screen
+  prefs.begin("zerotimer", true);
+  mirrorResumeSaved = prefs.getBool("mirrorAsk", false);
+  prefs.end();
+  if (mirrorResumeSaved) {
+    Serial.println("Resuming PC Mirror");
+    if (!deviceOn) turnOn();
+    mirrorInfoOpen  = true;
+    mirrorAsked     = true;  // shows "Opening on your PC" until the page says hello
+    mirrorAskedMs   = millis();
+    mirrorInfoShown = -1;
+  }
 }
 
 // On battery (rev C, DIY board): the cell is nearly empty. Say so, then save and switch off while the 3.3 V supply
@@ -346,8 +618,18 @@ static void lowBatteryOff() {
 }
 
 void loop() {
+  if (upd.active) { updatePump(); return; }
+  MirrorInput pc = pollMirror();
+  if (upd.active) return;
+
   // Handle OFF state
   if (!deviceOn) {
+    if (pc.click || pc.hold) {  // the mirror page switches it on like the knob
+      playKnobSound(KnobSound::PRESS);
+      playKnobSound(KnobSound::RELEASE);
+      turnOn();
+      return;
+    }
     if (digitalRead(ENC_SW) == LOW) {
       delay(50);
       if (digitalRead(ENC_SW) != LOW) return;
@@ -367,15 +649,21 @@ void loop() {
   // Timer ticks
   dispatchTick();
 
-  // Encoder input
-  int32_t delta = readEncoderDelta();
+  // Encoder input, the knob's and the page's
+  int32_t delta = readEncoderDelta() + pc.turn;
   if (delta != 0) {
     Serial.print("ENC delta="); Serial.println(delta);
     dispatchEncoder(delta);
   }
 
-  // Button input
+  // Button input; the page's clicks and holds come with the knob's sounds
   int btnEvent = readButton();
+  if (pc.click || pc.hold) {
+    playKnobSound(KnobSound::PRESS);
+    playKnobSound(KnobSound::RELEASE);
+    if (pc.click) dispatchClick();
+    if (pc.hold)  dispatchLongPress();
+  }
   if (btnEvent == 1) {
     Serial.println("BTN click");
     dispatchClick();
