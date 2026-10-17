@@ -19,7 +19,7 @@ BAUD = 921600
 BLOCK = 4096            # UPDATE_BLOCK in serial_update.h
 MAX_SIZE = 0x140000     # UPDATE_MAX_SIZE: one app slot
 REPLY = b"@pomobox update "
-READY_S, ACK_S, DONE_S = 5, 10, 20
+READY_S, ACK_S, DONE_S = 20, 10, 20  # ready comes after the PomoBox erases the target area
 
 
 def update_command(image: bytes) -> bytes:

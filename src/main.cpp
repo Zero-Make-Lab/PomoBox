@@ -336,13 +336,23 @@ struct MirrorInput {
 // =============================================================================
 
 #if defined(ARDUINO_ARCH_ESP32)
-#include <Update.h>
+#include <MD5Builder.h>
+#include <esp_ota_ops.h>
 #endif
 
+// The ESP-IDF OTA calls directly, not the Arduino Update library: that library erases a 64 KB block in the middle of
+// the transfer, and after that erase the PomoBox stopped receiving the image (found live, 2026-10-17). Here the whole
+// target area is erased before "ready", so nothing slow happens while bytes stream in.
 static struct {
   bool     active;
   uint32_t size, received, lastMs;
   uint8_t  shownPercent;
+  char     md5[33];
+#if defined(ARDUINO_ARCH_ESP32)
+  esp_ota_handle_t       handle;
+  const esp_partition_t *slot;
+  MD5Builder             sum;
+#endif
 } upd;
 
 static void updateSay(const char *what) {
@@ -350,13 +360,13 @@ static void updateSay(const char *what) {
   Serial.println(what);
 }
 
-static void drawUpdateScreen(uint8_t percent, bool full) {
+static void drawUpdateScreen(uint8_t percent, bool full, const char *title = "Updating") {
   if (full) {
     digitalWrite(TFT_LED, HIGH);  // also from the soft off
     displaySleep(false);
     tft.fillScreen(COLOR_BG);
     tft.setTextColor(COLOR_TEXT, COLOR_BG);
-    printCentered("Updating", 70, 3);
+    printCentered(title, 70, 3);
     tft.setTextColor(COLOR_TEXT_DIM, COLOR_BG);
     printCentered("Keep the USB cable plugged in", 112, 1);
     tft.fillRoundRect(30, 140, 260, 12, 6, COLOR_SURFACE);
@@ -366,14 +376,29 @@ static void drawUpdateScreen(uint8_t percent, bool full) {
   upd.shownPercent = percent;
 }
 
+// How the update ended, on the PomoBox's own screen
+static void drawUpdateResult(bool ok, const char *detail) {
+  tft.fillScreen(COLOR_BG);
+  tft.setTextColor(ok ? COLOR_ACCENT_BREAK : COLOR_RED, COLOR_BG);
+  printCentered(ok ? "Update done" : "Update failed", 80, 3);
+  tft.setTextColor(COLOR_TEXT_DIM, COLOR_BG);
+  printCentered(detail, 124, 1);
+}
+
 static void updateFail(const char *reason) {
 #if defined(ARDUINO_ARCH_ESP32)
-  Update.abort();
+  if (upd.handle) esp_ota_abort(upd.handle);
+  upd.handle = 0;
 #endif
+  bool wasRunning = upd.active;
   upd.active = false;
-  char msg[64];
+  char msg[80];
   snprintf(msg, sizeof msg, "error %s", reason);
   updateSay(msg);
+  if (wasRunning) {
+    drawUpdateResult(false, "Still on v" POMOBOX_VERSION ". Nothing was changed.");
+    delay(2500);
+  }
   needsFullRedraw = true;  // back to what was on screen; the running firmware stays
   if (!deviceOn) { tft.fillScreen(0x0000); displaySleep(true); digitalWrite(TFT_LED, LOW); }
 }
@@ -384,9 +409,18 @@ static void updateBegin(const char *line) {
 #if defined(ARDUINO_ARCH_ESP32)
   mirrorStop();  // no frames between the acks; the page says hello again after the restart
   mirrorSession.active = false;
-  if (!Update.begin(req.size)) { updateSay("error no-space"); return; }
-  Update.setMD5(req.md5);
-  upd = {true, req.size, 0, millis(), 0};
+  upd.slot = esp_ota_get_next_update_partition(nullptr);
+  if (!upd.slot || req.size > upd.slot->size) { updateSay("error no-space"); return; }
+  drawUpdateScreen(0, true, "Preparing");
+  // Erases req.size bytes of the other slot now, before any image byte is sent (a few seconds)
+  upd.handle = 0;
+  if (esp_ota_begin(upd.slot, req.size, &upd.handle) != ESP_OK) { updateSay("error erase"); needsFullRedraw = true; return; }
+  upd.sum.begin();
+  memcpy(upd.md5, req.md5, sizeof upd.md5);
+  upd.active = true;
+  upd.size = req.size;
+  upd.received = 0;
+  upd.lastMs = millis();
   drawUpdateScreen(0, true);
   updateSay("ready");
 #else
@@ -401,7 +435,8 @@ static void updatePump() {
   uint32_t n;
   while ((n = updateTake(upd.size, upd.received, (uint32_t)Serial.available(), sizeof buf)) > 0) {
     n = (uint32_t)Serial.readBytes(buf, n);
-    if (Update.write(buf, n) != n) { updateFail("write"); return; }
+    if (esp_ota_write(upd.handle, buf, n) != ESP_OK) { updateFail("write"); return; }
+    upd.sum.add(buf, n);
     upd.received += n;
     upd.lastMs = millis();
     if (updateShouldAck(upd.received, upd.size)) {
@@ -413,13 +448,24 @@ static void updatePump() {
   uint8_t pct = updatePercent(upd.received, upd.size);
   if (pct != upd.shownPercent) drawUpdateScreen(pct, false);
   if (upd.received == upd.size) {
-    if (!Update.end()) { updateFail(Update.md5String().length() ? "checksum" : "finish"); return; }
+    upd.sum.calculate();
+    if (strcmp(upd.sum.toString().c_str(), upd.md5) != 0) { updateFail("checksum"); return; }
+    esp_err_t ended = esp_ota_end(upd.handle);  // checks the image itself: header, segments, checksum
+    upd.handle = 0;
+    if (ended != ESP_OK) { updateFail("bad-image"); return; }
+    if (esp_ota_set_boot_partition(upd.slot) != ESP_OK) { updateFail("boot-slot"); return; }
+    upd.active = false;
     updateSay("done");
+    drawUpdateResult(true, "Restarting into the new version");
     Serial.flush();
-    delay(300);
+    delay(1200);
     ESP.restart();
   }
-  if (millis() - upd.lastMs > UPDATE_IDLE_MS) updateFail("timeout");
+  if (millis() - upd.lastMs > UPDATE_IDLE_MS) {
+    char why[64];
+    snprintf(why, sizeof why, "timeout got=%lu waiting=%d", (unsigned long)upd.received, Serial.available());
+    updateFail(why);
+  }
 #endif
 }
 
@@ -452,6 +498,18 @@ static MirrorInput pollMirror() {
 // =============================================================================
 // Arduino Setup & Loop
 // =============================================================================
+
+// "Updated" and the version now running, for a moment after a new version's first start
+static void showVersionNotice() {
+  tft.fillScreen(COLOR_BG);
+  tft.setTextColor(COLOR_ACCENT_BREAK, COLOR_BG);
+  printCentered("Updated", 82, 3);
+  tft.setTextColor(COLOR_TEXT, COLOR_BG);
+  printCentered("PomoBox v" POMOBOX_VERSION, 124, 2);
+  playClickSound();
+  delay(2200);
+  needsFullRedraw = true;
+}
 
 void setup() {
   powerHold();  // C6: power peripherals before driving their inputs or starting SPI
@@ -515,13 +573,26 @@ void setup() {
   Serial.println("Press button to start...");
   // loop() waits in the soft off for a press of the knob, or a click on the PC mirror page
 
+  // The first start of a new version (zeroFlash, a USB update): switch on and say which one is running now
+  prefs.begin("zerotimer", true);
+  uint32_t lastVersion = prefs.getUInt("fwVersion", 0);
+  prefs.end();
+  if (lastVersion != POMOBOX_VERSION_CODE) {
+    prefs.begin("zerotimer", false);
+    prefs.putUInt("fwVersion", POMOBOX_VERSION_CODE);
+    prefs.end();
+    Serial.println("New version: " POMOBOX_VERSION);
+    turnOn();
+    showVersionNotice();
+  }
+
   // Restarted by the PC taking the port right after PC Mirror asked for it: come back on, at that screen
   prefs.begin("zerotimer", true);
   mirrorResumeSaved = prefs.getBool("mirrorAsk", false);
   prefs.end();
   if (mirrorResumeSaved) {
     Serial.println("Resuming PC Mirror");
-    turnOn();
+    if (!deviceOn) turnOn();
     mirrorInfoOpen  = true;
     mirrorAsked     = true;  // shows "Opening on your PC" until the page says hello
     mirrorAskedMs   = millis();
