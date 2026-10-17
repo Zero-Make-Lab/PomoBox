@@ -1,5 +1,6 @@
 #pragma once
 #include "common.h"
+#include "version.h"
 
 // =============================================================================
 // Device settings (docs/specs/usb-mirror.md)
@@ -181,6 +182,7 @@ static void drawSettings() {
     tft.fillRect(20, 50, 280, 1, COLOR_SURFACE);
     tft.setTextColor(COLOR_TEXT_DIM, COLOR_BG);
     printCentered("click: change  hold: back", 228, 1);
+    printCentered("PomoBox v" POMOBOX_VERSION, 212, 1);
     for (int i = 0; i < SETTINGS_COUNT; i++) drawSettingsRow(i, i == settingsSel);
     needsFullRedraw = false;
     dispMenuSel = settingsSel;

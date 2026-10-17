@@ -462,6 +462,7 @@ void setup() {
   Serial.begin(MIRROR_BAUD);
   delay(200);
   Serial.println("\nPomoBox - Multi-App Platform");
+  Serial.println("Version " POMOBOX_VERSION);
 
   pinMode(ENC_SW, INPUT_PULLUP);
 
