@@ -12,7 +12,7 @@ aside first: POST http://127.0.0.1:47321/release. The helper lets go of the port
 seconds; asking again extends that, so zeroFlash asks every few seconds while it installs. Only this computer can
 reach it, and only the ZeroMakeLab site and local previews may ask from a browser.
 
-    python pomobox_helper.py                                   # opens https://zeromakelab.com/mirror
+    python pomobox_helper.py                                   # opens https://zeromakelab.com/mirror?helper=1
     python pomobox_helper.py --url http://localhost:4237/mirror
     python pomobox_helper.py --log helper.log                  # for pythonw (no console), e.g. at Windows start
     python pomobox_helper.py --release                         # ask a running helper to let go, e.g. before pio upload
@@ -30,7 +30,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 OPEN_REQUEST = "@pomobox open-mirror"
 BAUD = 921600
 MAX_LINE = 256
-DEFAULT_URL = "https://zeromakelab.com/mirror"
+DEFAULT_URL = "https://zeromakelab.com/mirror?helper=1"  # ?helper=1: the site remembers a helper runs here
 # The USB chips PomoBox boards use: Silicon Labs CP210x, Espressif native USB, WCH CH34x, FTDI, Raspberry Pi RP2040
 VENDORS = {0x10C4, 0x303A, 0x1A86, 0x0403, 0x2E8A}
 RETRY_S = 2       # port missing or busy (the page has it): look again this often

@@ -39,6 +39,9 @@ Choosing **PC Mirror** in Settings opens the page on the PC by itself: one click
   they hold it (the website's `public/flash/helper.js`), so flashing works with the helper running. Command-line
   flashers: run `python tools/pc-helper/pomobox_helper.py --release` first (it lasts 15 s).
 - Only one helper runs: a second one finds the release port taken and exits.
+- Chrome asks once before a public site may reach this computer's own address (loopback network access). The
+  pages only ask the helper when one is known to run here: it opens the mirror page as `?helper=1`, which the site
+  remembers, or the person already allowed the access. Visitors without the helper never see that prompt.
 
 ## How it works
 
