@@ -30,9 +30,15 @@ Choosing **PC Mirror** in Settings opens the page on the PC by itself: one click
   the page lets go, the helper listens again.
 - The screen shows Opening on your PC, then Connected. With no page after 15 s it says nobody answered: start the
   helper, or open the address by hand. A click asks again.
-- Starting the helper with Windows is the owner's call (a persistent change to the PC). The first visit to the
-  page still needs one Connect click: browsers only remember a port after the person picks it once.
-- Stop the helper before flashing: the flasher needs the port.
+- Starting the helper with Windows is the owner's call (a persistent change to the PC); on the owner's PC it starts
+  silently with `pythonw` from the Startup folder and logs with `--log` (2026-10-17). The first visit to the page
+  still needs one Connect click: browsers only remember a port after the person picks it once.
+- Anything else that needs the port asks the helper to step aside: `POST http://127.0.0.1:47321/release` (this
+  computer only; from a browser, only zeromakelab.com and local previews). The helper lets go and stays off the
+  port for 15 s after each ask. zeroFlash and the mirror page ask before opening the port and every 5 s while
+  they hold it (the website's `public/flash/helper.js`), so flashing works with the helper running. Command-line
+  flashers: run `python tools/pc-helper/pomobox_helper.py --release` first (it lasts 15 s).
+- Only one helper runs: a second one finds the release port taken and exits.
 
 ## How it works
 
