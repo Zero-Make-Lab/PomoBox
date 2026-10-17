@@ -31,6 +31,12 @@ class OpenRequest(unittest.TestCase):
         self.assertFalse(helper.is_open_request(b"@pomobox open-mirror please"))
 
 
+class Page(unittest.TestCase):
+    def test_opens_the_mirror_marked_as_from_the_helper(self):
+        # the site then knows a helper runs here, and may ask it to let go of the port (public/flash/helper.js)
+        self.assertEqual(helper.DEFAULT_URL, "https://zeromakelab.com/mirror?helper=1")
+
+
 class Lines(unittest.TestCase):
     def test_splits_reads_into_lines_keeping_the_partial_tail(self):
         lines, rest = helper.split_lines(b"", b"Device ON\r\n@pomobox open")
