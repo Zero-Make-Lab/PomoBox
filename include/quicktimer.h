@@ -1,6 +1,7 @@
 #pragma once
 #include "common.h"
 #include "qt_time.h"
+#include "device_settings.h"
 
 // =============================================================================
 // Quick Timer App - Countdown Timer, set as MM:SS (up to 60 min) or HH:MM (up to 12 h)
@@ -229,7 +230,10 @@ static void qtHandleEncoder(int32_t delta) {
 static void qtHandleClick() {
   qtEnsureFields();
   if (qtState == QTState::MENU) {
-    if (!handleSimpleMenuClick() && simpleMenuSel == SimpleMenuItem::TIMER_MODE) {
+    if (handleSimpleMenuClick()) return;
+    if (simpleMenuSel == SimpleMenuItem::PC_MIRROR) {
+      openMirrorInfo();
+    } else if (simpleMenuSel == SimpleMenuItem::TIMER_MODE) {
       // Switch MM:SS <-> HH:MM, keeping the set time where it fits
       int32_t total = qtSetTotal(qtUnits, qtSetLeft, qtSetRight);
       qtUnits = qtUnits == QTUnits::HOUR_MIN ? QTUnits::MIN_SEC : QTUnits::HOUR_MIN;

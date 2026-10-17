@@ -61,6 +61,7 @@ void turnOn();
 #include "counter.h"
 #include "dice.h"
 #include "metronome.h"
+#include "device_settings.h"
 
 // =============================================================================
 // Storage (NVS)
@@ -108,6 +109,8 @@ void turnOff() {
 
 void turnOn() {
   powerHold();
+  mirrorInfoOpen = false;
+  settingsOpen   = false;
   digitalWrite(TFT_LED, HIGH);
   displaySleep(false);
   deviceOn = true;
@@ -210,8 +213,12 @@ static int readButton() {
 
 static void dispatchEncoder(int32_t delta) {
   if (delta != 0) playKnobSound(KnobSound::TURN);
+  if (mirrorInfoOpen) return;
   switch (activeApp) {
-    case ActiveApp::LAUNCHER:    launcherHandleEncoder(delta); break;
+    case ActiveApp::LAUNCHER:
+      if (settingsOpen) settingsHandleEncoder(delta);
+      else              launcherHandleEncoder(delta);
+      break;
     case ActiveApp::POMODORO:    pomHandleEncoder(delta);      break;
     case ActiveApp::QUICK_TIMER: qtHandleEncoder(delta);       break;
     case ActiveApp::STOPWATCH:   swHandleEncoder(delta);       break;
@@ -222,8 +229,12 @@ static void dispatchEncoder(int32_t delta) {
 }
 
 static void dispatchClick() {
+  if (mirrorInfoOpen) { closeMirrorInfo(); return; }
   switch (activeApp) {
-    case ActiveApp::LAUNCHER:    launcherClick();    break;
+    case ActiveApp::LAUNCHER:
+      if (settingsOpen) settingsClick();
+      else              launcherClick();
+      break;
     case ActiveApp::POMODORO:    pomHandleClick();   break;
     case ActiveApp::QUICK_TIMER: qtHandleClick();    break;
     case ActiveApp::STOPWATCH:   swHandleClick();    break;
@@ -234,8 +245,12 @@ static void dispatchClick() {
 }
 
 static void dispatchLongPress() {
+  if (mirrorInfoOpen) { closeMirrorInfo(); return; }
   switch (activeApp) {
-    case ActiveApp::LAUNCHER:    break;  // No long press on launcher
+    case ActiveApp::LAUNCHER:
+      if (settingsOpen) closeSettings();
+      else              openSettings();
+      break;
     case ActiveApp::POMODORO:    pomHandleLongPress();  break;
     case ActiveApp::QUICK_TIMER: qtHandleLongPress();   break;
     case ActiveApp::STOPWATCH:   swHandleLongPress();   break;
@@ -255,8 +270,12 @@ static void dispatchTick() {
 }
 
 static void dispatchDraw() {
+  if (mirrorInfoOpen) { drawMirrorInfo(); return; }
   switch (activeApp) {
-    case ActiveApp::LAUNCHER:    drawLauncherScreen(); break;
+    case ActiveApp::LAUNCHER:
+      if (settingsOpen) drawSettings();
+      else              drawLauncherScreen();
+      break;
     case ActiveApp::POMODORO:    pomDraw();             break;
     case ActiveApp::QUICK_TIMER: qtDraw();              break;
     case ActiveApp::STOPWATCH:   swDraw();              break;
@@ -267,12 +286,70 @@ static void dispatchDraw() {
 }
 
 // =============================================================================
+// USB Screen Mirror (docs/specs/usb-mirror.md)
+// =============================================================================
+
+static MirrorSession mirrorSession{};
+static MirrorLine    mirrorLine{};
+
+bool mirrorConnected() { return mirrorSession.active; }
+
+static void mirrorWrite(const uint8_t *frame, size_t len) { Serial.write(frame, len); }
+
+// A page said hello: tell it the screen size and state, then draw the whole screen into it
+static void mirrorStart() {
+  uint8_t f[MIRROR_FRAME_MAX];
+  Serial.write(f, mirrorFrameInfo(f, tft.width(), tft.height()));
+  Serial.write(f, mirrorFramePower(f, deviceOn));
+  tft.mirrorOut = mirrorWrite;
+  needsFullRedraw = true;
+  mirrorInfoShown = -1;
+}
+
+static void mirrorStop() {
+  tft.mirrorOut = nullptr;
+  mirrorInfoShown = -1;  // the PC Mirror screen shows the change
+}
+
+// Knob input from the page, gathered since the last loop
+struct MirrorInput {
+  int32_t turn;
+  bool    click;
+  bool    hold;
+};
+
+static MirrorInput pollMirror() {
+  MirrorInput in{};
+  while (Serial.available() > 0) {
+    int32_t turn = 0;
+    MirrorCmd cmd = mirrorFeed(mirrorLine, (char)Serial.read(), turn);
+    mirrorHeard(mirrorSession, cmd, millis());
+    switch (cmd) {
+      case MirrorCmd::HELLO: mirrorStart();    break;
+      case MirrorCmd::BYE:   mirrorStop();     break;
+      case MirrorCmd::TURN:  in.turn += turn;  break;
+      case MirrorCmd::CLICK: in.click = true;  break;
+      case MirrorCmd::HOLD:  in.hold  = true;  break;
+      default: break;
+    }
+  }
+  if (mirrorExpired(mirrorSession, millis())) {
+    mirrorSession.active = false;
+    mirrorStop();
+  }
+  return in;
+}
+
+// =============================================================================
 // Arduino Setup & Loop
 // =============================================================================
 
 void setup() {
   powerHold();  // C6: power peripherals before driving their inputs or starting SPI
-  Serial.begin(115200);
+#if defined(ARDUINO_ARCH_ESP32)
+  Serial.setTxBufferSize(8192);  // a whole-screen redraw while mirroring fits without stalling the panel
+#endif
+  Serial.begin(MIRROR_BAUD);
   delay(200);
   Serial.println("\nPomoBox - Multi-App Platform");
 
@@ -325,14 +402,7 @@ void setup() {
   // board off.
   powerRelease();
   Serial.println("Press button to start...");
-
-  // Wait for button press to turn on
-  while (digitalRead(ENC_SW) == HIGH) { delay(10); }
-  playKnobSound(KnobSound::PRESS);
-  while (digitalRead(ENC_SW) == LOW)  { delay(10); }
-  playKnobSound(KnobSound::RELEASE);
-
-  turnOn();
+  // loop() waits in the soft off for a press of the knob, or a click on the PC mirror page
 }
 
 // On battery (rev C, DIY board): the cell is nearly empty. Say so, then save and switch off while the 3.3 V supply
@@ -349,8 +419,16 @@ static void lowBatteryOff() {
 }
 
 void loop() {
+  MirrorInput pc = pollMirror();
+
   // Handle OFF state
   if (!deviceOn) {
+    if (pc.click || pc.hold) {  // the mirror page switches it on like the knob
+      playKnobSound(KnobSound::PRESS);
+      playKnobSound(KnobSound::RELEASE);
+      turnOn();
+      return;
+    }
     if (digitalRead(ENC_SW) == LOW) {
       delay(50);
       if (digitalRead(ENC_SW) != LOW) return;
@@ -370,15 +448,21 @@ void loop() {
   // Timer ticks
   dispatchTick();
 
-  // Encoder input
-  int32_t delta = readEncoderDelta();
+  // Encoder input, the knob's and the page's
+  int32_t delta = readEncoderDelta() + pc.turn;
   if (delta != 0) {
     Serial.print("ENC delta="); Serial.println(delta);
     dispatchEncoder(delta);
   }
 
-  // Button input
+  // Button input; the page's clicks and holds come with the knob's sounds
   int btnEvent = readButton();
+  if (pc.click || pc.hold) {
+    playKnobSound(KnobSound::PRESS);
+    playKnobSound(KnobSound::RELEASE);
+    if (pc.click) dispatchClick();
+    if (pc.hold)  dispatchLongPress();
+  }
   if (btnEvent == 1) {
     Serial.println("BTN click");
     dispatchClick();

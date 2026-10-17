@@ -1,15 +1,16 @@
 #pragma once
 #include "common.h"
+#include "device_settings.h"
 
 // =============================================================================
 // Stopwatch App - Count Up with Lap History
 // =============================================================================
 
 enum class SWState { RESET, RUNNING, STOPPED, MENU };
-enum class SWMenuItem { VOLUME, LAP_RESET, CLEAR_LAPS, SWITCH_APP, TURN_OFF };
+enum class SWMenuItem { VOLUME, LAP_RESET, CLEAR_LAPS, PC_MIRROR, SWITCH_APP, TURN_OFF };
 
 static constexpr int SW_MAX_LAPS  = 20;
-static constexpr int SW_MENU_COUNT = 5;
+static constexpr int SW_MENU_COUNT = 6;
 
 // --- State ---
 static SWState  swState      = SWState::RESET;
@@ -213,11 +214,14 @@ static void drawSWMenuItemAt(int slot, int itemIdx, bool selected) {
       tft.setTextColor(selected ? COLOR_ACCENT_STOPWATCH : COLOR_TEXT_DIM, bg);
       tft.setCursor(250, y + 12); tft.print(swLapCount);
       break;
-    case 3: // Switch App
+    case 3: // PC Mirror
+      drawMirrorMenuRow(y, 12, selected, bg);
+      break;
+    case 4: // Switch App
       tft.setTextColor(selected ? COLOR_TEXT : COLOR_TEXT_DIM, bg);
       tft.setTextSize(2); tft.setCursor(100, y + 12); tft.print("Switch App");
       break;
-    case 4: // Turn Off
+    case 5: // Turn Off
       tft.setTextColor(COLOR_RED, bg);
       tft.setTextSize(2); tft.setCursor(115, y + 12); tft.print("Turn Off");
       break;
@@ -228,7 +232,7 @@ static void drawSWMenuScreen() {
   int sel = (int)swMenuSel;
   static int swMenuScroll = 0;
 
-  // Scrolling: 3 visible items out of 5
+  // Scrolling: 3 visible items out of SW_MENU_COUNT
   if (sel < swMenuScroll) swMenuScroll = sel;
   else if (sel >= swMenuScroll + 3) swMenuScroll = sel - 2;
 
@@ -308,6 +312,9 @@ static void swMenuClick() {
       memset(swLapTimes, 0, sizeof(swLapTimes));
       playClickSound();
       needsFullRedraw = true;
+      break;
+    case SWMenuItem::PC_MIRROR:
+      openMirrorInfo();
       break;
     case SWMenuItem::SWITCH_APP:
       switchToLauncher();

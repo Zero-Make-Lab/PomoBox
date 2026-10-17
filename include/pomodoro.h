@@ -1,5 +1,6 @@
 #pragma once
 #include "common.h"
+#include "device_settings.h"
 
 // =============================================================================
 // Pomodoro Timer App
@@ -7,9 +8,9 @@
 
 enum class PomState { RUNNING, PAUSED, MENU };
 enum class PomTimerMode { FOCUS, BREAK };
-enum class PomMenuItem { FOCUS_TIME, BREAK_TIME, AUTO_CONTINUE, VOLUME, STATS, SWITCH_APP, TURN_OFF };
+enum class PomMenuItem { FOCUS_TIME, BREAK_TIME, AUTO_CONTINUE, VOLUME, STATS, PC_MIRROR, SWITCH_APP, TURN_OFF };
 
-static constexpr int POM_MENU_COUNT   = 7;
+static constexpr int POM_MENU_COUNT   = 8;
 static constexpr int POM_MENU_VISIBLE = 3;
 
 // --- State ---
@@ -246,11 +247,14 @@ static void drawPomMenuItemAt(int slot, int itemIdx, bool selected) {
       tft.print((pomTotalFocus % 3600) / 60); tft.print("m");
       break;
     }
-    case 5: // Switch App
+    case 5: // PC Mirror
+      drawMirrorMenuRow(y, 14, selected, bg);
+      break;
+    case 6: // Switch App
       tft.setTextColor(selected ? COLOR_TEXT : COLOR_TEXT_DIM, bg);
       tft.setTextSize(2); tft.setCursor(100, y + 14); tft.print("Switch App");
       break;
-    case 6: // Turn Off
+    case 7: // Turn Off
       tft.setTextColor(COLOR_RED, bg);
       tft.setTextSize(2); tft.setCursor(115, y + 14); tft.print("Turn Off");
       break;
@@ -336,6 +340,9 @@ static void pomMenuClick() {
       pomTotalFocus = 0;
       saveSettings();
       needsFullRedraw = true;
+      break;
+    case PomMenuItem::PC_MIRROR:
+      openMirrorInfo();
       break;
     case PomMenuItem::SWITCH_APP:
       switchToLauncher();

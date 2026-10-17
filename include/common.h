@@ -255,6 +255,7 @@ inline void playBootSplash() {
 // =============================================================================
 
 inline void displaySleep(bool sleep) {
+  tft.mirrorPower(!sleep);
   tft.startWrite();
   tft.writeCommand(sleep ? 0x10 : 0x11);
   tft.endWrite();
@@ -277,28 +278,33 @@ void switchToLauncher();
 void turnOff();
 void turnOn();
 
+// USB mirror (docs/specs/usb-mirror.md): a page on the PC is listening
+bool mirrorConnected();
+
 // =============================================================================
 // Shared Simple Menu (the Quick Timer's settings)
 // =============================================================================
 
-enum class SimpleMenuItem { VOLUME, TIMER_MODE, SWITCH_APP, TURN_OFF };
-static constexpr int SIMPLE_MENU_COUNT = 4;
+enum class SimpleMenuItem { VOLUME, TIMER_MODE, PC_MIRROR, SWITCH_APP, TURN_OFF };
+static constexpr int SIMPLE_MENU_COUNT = 5;
 
 extern SimpleMenuItem simpleMenuSel;
 
+void drawMirrorMenuRow(int16_t y, int16_t textDy, bool selected, uint16_t bg);  // device_settings.h
+
 inline void drawSimpleMenuRow(int i, bool s) {
-  const int IH = 42, SY = 60;
+  const int IH = 34, SY = 56, TY = 8;  // five rows, the last ending above the hint line
   int16_t y = SY + i * IH;
   uint16_t bg = s ? COLOR_SURFACE : COLOR_BG;
-  tft.fillRoundRect(15, y, 290, 38, 8, bg);
+  tft.fillRoundRect(15, y, 290, 31, 8, bg);
   tft.setTextSize(2);
 
   switch ((SimpleMenuItem)i) {
     case SimpleMenuItem::VOLUME:
       tft.setTextColor(s ? COLOR_TEXT : COLOR_TEXT_DIM, bg);
-      tft.setCursor(25, y + 11); tft.print("Volume");
+      tft.setCursor(25, y + TY); tft.print("Volume");
       tft.setTextColor(s ? COLOR_ACCENT_FOCUS : COLOR_TEXT_DIM, bg);
-      tft.setCursor(220, y + 11);
+      tft.setCursor(220, y + TY);
       switch (volumeLevel) {
         case VolumeLevel::VOL_MUTE: tft.print("Mute"); break;
         case VolumeLevel::VOL_LOW:  tft.print("Low");  break;
@@ -308,18 +314,21 @@ inline void drawSimpleMenuRow(int i, bool s) {
       break;
     case SimpleMenuItem::TIMER_MODE:
       tft.setTextColor(s ? COLOR_TEXT : COLOR_TEXT_DIM, bg);
-      tft.setCursor(25, y + 11); tft.print("Timer Mode");
+      tft.setCursor(25, y + TY); tft.print("Timer Mode");
       tft.setTextColor(s ? COLOR_ACCENT_FOCUS : COLOR_TEXT_DIM, bg);
-      tft.setCursor(220, y + 11);
+      tft.setCursor(220, y + TY);
       tft.print(qtUnits == QTUnits::HOUR_MIN ? "Hours" : "Mins");
+      break;
+    case SimpleMenuItem::PC_MIRROR:
+      drawMirrorMenuRow(y, TY, s, bg);
       break;
     case SimpleMenuItem::SWITCH_APP:
       tft.setTextColor(s ? COLOR_TEXT : COLOR_TEXT_DIM, bg);
-      tft.setCursor(100, y + 11); tft.print("Switch App");
+      tft.setCursor(100, y + TY); tft.print("Switch App");
       break;
     case SimpleMenuItem::TURN_OFF:
       tft.setTextColor(COLOR_RED, bg);
-      tft.setCursor(115, y + 11); tft.print("Turn Off");
+      tft.setCursor(115, y + TY); tft.print("Turn Off");
       break;
   }
 }
@@ -380,6 +389,8 @@ inline bool handleSimpleMenuClick() {
       turnOff();
       return true;
     case SimpleMenuItem::TIMER_MODE:
+      return false;
+    case SimpleMenuItem::PC_MIRROR:
       return false;
   }
   return false;

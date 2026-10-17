@@ -1,0 +1,15 @@
+# Golden mirror byte stream, protocol v1 (docs/specs/usb-mirror.md). Worked out by hand, not generated.
+# Read by test/test_mirror (the firmware's encoder must produce it) and mirror/mirror.test.mjs (the page must
+# decode it). In order:
+#   info 320x240
+#   rect x=10 y=20 w=30 h=40 color=0xF800
+#   power on
+#   rect x=-5 y=0 w=1 h=1 color=0x07E0
+#   the log text "Hi\n" between frames
+#   rect x=319 y=239 w=1 h=1 color=0xFFFF
+A5 49 05 01 40 01 F0 00 FC
+A5 52 0A 0A 00 14 00 1E 00 28 00 00 F8 88
+A5 50 01 01 50
+A5 52 0A FB FF 00 00 01 00 01 00 E0 07 BB
+48 69 0A
+A5 52 0A 3F 01 EF 00 01 00 01 00 FF FF 89
